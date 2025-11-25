@@ -1,0 +1,16 @@
+﻿<RadzenAlert AlertStyle="AlertStyle.Danger" AllowClose="false">
+
+    @if (Errors != null)
+    {
+        @foreach (var error in Errors)
+        {
+            <h5>@error</h5>
+        }
+    }
+
+</RadzenAlert>
+
+@code {
+    [Parameter]
+    public List<string>? Errors { get; set; }
+}

@@ -1,0 +1,489 @@
+﻿@page "/users"
+@implements IAsyncDisposable
+@attribute [MustHavePermission(Permissions.ViewUsers)]
+
+<MyMenuBar AddNew="AddUser"
+           ButtonText="@MyText.addUser"
+           ExportGrid="ExportGrid"
+           IsGridView="@_isCardView"
+           ToggleView="@ToggleView"
+           SelectedDeleteFilter="@_selectedDeleteFilter"
+           OnDeleteFilterChange="@OnDeleteFilterChange" />
+
+
+@if (_customLoader)
+{
+    <MyLoader2 LoaderText="@_loaderText" />
+}
+
+@if (_isLoading)
+{
+    <MyLoader />
+}
+else
+{
+    @if (!_isCardView)
+    {
+        <MyGrid GridSource="@_users"
+                SelectedItems="@_selectedUser"
+                TItem="UserViewModel"
+                OnGridInitialized="SetGridReference"
+                @ref="@_grid"
+                OnEditItem="(e) => EditUser(e)"
+                OnDeleteItem="(e) => DeleteUser(e)"
+                DeletePermission="@_canDelete"
+                GridSettingsName="UsersGridSettings">
+
+            <GridColumns>
+
+                <MyGridColumn TItem="UserViewModel"
+                              ColumnName="@(nameof(UserViewModel.FirstName))"
+                              Width="150px"
+                              TextName="@MyText.firstName" />
+
+                <MyGridColumn TItem="UserViewModel"
+                              ColumnName="@(nameof(UserViewModel.LastName))"
+                              Width="150px"
+                              TextName="@MyText.lastName" />
+
+                <MyGridColumn TItem="UserViewModel"
+                              ColumnName="@(nameof(UserViewModel.UserName))"
+                              Width="150px"
+                              TextName="@MyText.username" />
+
+                <MyGridColumn TItem="UserViewModel"
+                              ColumnName="@(nameof(UserViewModel.Email))"
+                              Width="150px"
+                              TextName="@MyText.email" />
+
+                <MyGridColumnTemplate TItem="UserViewModel"
+                                      Width="150px"
+                                      TextName="@MyText.roles">
+                    <TemplateContent Context="user">
+                        @(string.Join(" - ", user.Roles))
+                    </TemplateContent>
+                </MyGridColumnTemplate>
+
+                <MyToggledColumn TItem="UserViewModel"
+                                 ColumnName="@(nameof(UserViewModel.IsDisabled))"
+                                 Width="100px"
+                                 Condition="@(c => c.IsDisabled)" />
+
+            </GridColumns>
+        </MyGrid>
+    }
+    else
+    {
+        <MyMenuBarForCardView Columns="@_columns"
+                              SelectedColumn="@_selectedColumn"
+                              OnSearchTextChanged="@OnSearchChange"
+                              OnSelectedColumnChanged="@SelectedColumnChanged"
+                              OnSelectedSearchTypeChanged="@SelectedSearchTypeChanged"
+                              OnSearch="@SearchUsersStatus" />
+
+        <MyCardViewPaging TItem="UserViewModel"
+                          Items="@_users"
+                          GetName="user => user.UserName!.ToString()"
+                          IsDeleted="user => user.IsDisabled"
+                          EditItem="EditUser"
+                          DeleteItem="DeleteUser"
+                          DeletePermission="@_canDelete">
+
+            <CardBody Context="user">
+                <MyCardLabel Label="@MyText.id" Content="@user.Id" />
+                <MyCardLabel Label="@MyText.firstName" Content="@user.FirstName" />
+                <MyCardLabel Label="@MyText.lastName" Content="@user.LastName" />
+                <MyCardLabel Label="@MyText.username" Content="@user.UserName" />
+                <MyCardLabel Label="@MyText.email" Content="@user.Email" />
+                <MyCardLabel Label="@MyText.roles" Content="@(string.Join(" - ",user.Roles))" />
+            </CardBody>
+        </MyCardViewPaging>
+    }
+
+    <Notification @ref="NotificationRef" />
+}
+
+@code {
+
+    #region "CascadingParameters"
+
+    [CascadingParameter(Name = Strings.CurrentCulture)]
+    public string AppCulture { get; set; }
+
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthState { get; set; }
+
+    #endregion
+
+    #region "Injects"
+
+    [Inject]
+    protected IAuthorizationService _authService { get; set; } = default!;
+
+    [Inject]
+    private IMainService<UserViewModel>? _userService { get; set; }
+
+    #endregion
+
+    #region "Variables"
+
+    private I18nText.MyText MyText = new();
+
+    private Notification NotificationRef;
+
+    private HotKeysContext? _hotKeysContext;
+
+    private bool _isLoading = false;
+
+    private bool _isCardView = true;
+
+    private RadzenDataGrid<UserViewModel> _grid;
+
+    private UserViewModel _user = new();
+
+    private UserViewModel? _editedUser { get; set; }
+
+    private List<UserViewModel> _users = new();
+
+    private List<UserViewModel> _originalUsers = new();
+
+    private List<UserViewModel> _selectedUser = new();
+
+    private DialogOptions _options = new Radzen.DialogOptions() { Width = "500px", Height = "600px", ShowClose = false };
+
+    private string _searchText = string.Empty;
+
+    private string _selectedColumn = string.Empty;
+
+    private string _selectedSearchType = string.Empty;
+
+    private string _selectedDeleteFilter = Strings.Active;
+
+    private List<DropDownItem> _columns = new();
+
+    private List<DropDownItem> _searchTypes = new();
+
+    private bool _customLoader;
+    private string _loaderText = string.Empty;
+
+    private bool _canView;
+    private bool _canCreate;
+    private bool _canEdit;
+    private bool _canDelete;
+
+    #endregion
+
+    #region "LifeCycle Methods"
+
+    protected override async Task OnInitializedAsync() => await InitializeComponentData();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadLocalizedText();
+        InitializeSearchColumn();
+        await ViewSate();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            _hotKeysContext = this.HotKeys.CreateContext().Add(Code.F4, AddUser);
+    }
+
+    private async Task InitializeComponentData()
+    {
+        _isLoading = true;
+
+        await LoadLocalizedText();
+        await LoadPermissions();
+        await LoadUsers();
+        SearchUsersStatus();
+
+        _isLoading = false;
+    }
+
+    private async Task LoadPermissions()
+    {
+        var user = (await AuthState).User;
+
+        _canView = await _authService.HasPermissionAsync(user, Permissions.ViewUsers);
+        _canCreate = await _authService.HasPermissionAsync(user, Permissions.CreateUsers);
+        _canEdit = await _authService.HasPermissionAsync(user, Permissions.EditUsers);
+        _canDelete = await _authService.HasPermissionAsync(user, Permissions.DeleteUsers);
+    }
+
+    private async Task ViewSate() => _isCardView = await storageService.GetItemAsync<bool>(Strings.UserCardView);
+
+    private async Task LoadLocalizedText() => MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+
+    private void InitializeSearchColumn()
+    {
+        _columns = new List<DropDownItem>
+        {
+            new DropDownItem { Text =AppCulture == Strings.ar ? Translator.UserNameAr : Translator.UserNameEn, Value = Strings.UserName },
+            new DropDownItem { Text =AppCulture == Strings.ar ? Translator.EmailAr : Translator.EmailEn, Value = Strings.Email }
+
+        };
+
+        if (string.IsNullOrEmpty(_selectedColumn) || !_columns.Any(c => c.Value == _selectedColumn))
+        {
+            _selectedColumn = _columns.FirstOrDefault()?.Value ?? string.Empty;
+        }
+
+        StateHasChanged();
+    }
+
+    #endregion
+
+    #region "Events"
+
+    private void SetGridReference(RadzenDataGrid<UserViewModel> gridReference) => _grid = gridReference; //Important For Export Grid
+
+    private void OnSearchChange(string newValue) => _searchText = newValue;
+
+    private void SelectedColumnChanged(string newValue) => _selectedColumn = newValue;
+
+    private void SelectedSearchTypeChanged(string newValue) => _selectedSearchType = newValue;
+
+    private void OnDeleteFilterChange(object value)
+    {
+        _selectedDeleteFilter = value.ToString();
+        SearchUsersStatus(); // Reapply the filter whenever the delete filter changes
+    }
+
+    #endregion
+
+    #region "CrudOperations"
+
+    private async Task LoadUsers()
+    {
+        var result = await _userService!.GetAll($"{ApiRoutes.v1}/{ApiRoutes.Users.GetAll}");
+        _users = result?.OrderBy(f => f.CreatedOn).ToList() ?? new List<UserViewModel>();
+
+        _selectedUser = new List<UserViewModel> { _users?.LastOrDefault() };
+        _originalUsers = new List<UserViewModel>(_users);
+    }
+
+    private async Task AddUser()
+    {
+        var parameters = new Dictionary<string, object>
+                             {
+                                { Strings.OnError, EventCallback.Factory.Create<List<string>>(this, HandleError) },
+                                { Strings.OnSuccess, EventCallback.Factory.Create(this, () => HandleSuccess(false)) }
+                             };
+        await dialogService.OpenAsync<UserForm>(MyText.addUser, parameters, _options);
+    }
+
+    private async Task EditUser(UserViewModel user)
+    {
+        var parameters = new Dictionary<string, object>
+            {
+                { Strings.OnError, EventCallback.Factory.Create<List<string>>(this, HandleError) },
+                { Strings.OnSuccess, EventCallback.Factory.Create(this, () => HandleSuccess(true, user)) },
+                { Strings.EditedUser, user }
+            };
+
+        await dialogService.OpenAsync<UserForm>(MyText.editRole, parameters, _options);
+    }
+
+    private async Task HandleSuccess(bool isEdit, UserViewModel editedUser = null)
+    {
+        await LoadUsers();
+        SearchUsersStatus();
+
+        if (isEdit && editedUser != null)
+        {
+            isEdit = false;
+
+            _selectedUser = new List<UserViewModel> { _users.FirstOrDefault(c => c.Id == editedUser.Id) };
+            StateHasChanged();
+
+            if (!_isCardView)
+                await radzenGridFunction.GoToPageByAsync(_users, editedUser, _grid, (c1, c2) => c1.Id == c2.Id);
+
+           NotificationRef.ShowNotifications(MyText.notificationEditSummary, $"{MyText.notificationEditDetail} {editedUser.UserName} {MyText.successEdit}");
+        }
+        else
+        {
+            var lastUser = _users?.LastOrDefault();
+            if (lastUser != null)
+            {
+                _selectedUser = new List<UserViewModel> { lastUser };
+                StateHasChanged();
+
+                if (!_isCardView)
+                    await radzenGridFunction.GoToPageByAsync(_users, lastUser, _grid, (c1, c2) => c1.Id == c2.Id);
+
+                NotificationRef.ShowNotifications(MyText.notificationSaveSummary, $"{MyText.notificationSaveDetail} {lastUser.UserName} {MyText.successSave}");
+            }
+        }
+    }
+
+    private void HandleError(List<string> errors)
+    {
+        foreach (var error in errors)
+            NotificationRef.ShowNotifications(error, Strings.Error, NotificationSeverity.Error);
+    }
+
+    #region "DeleteUser"
+
+    private async Task DeleteUser(UserViewModel user)
+    {
+        _customLoader = !_isCardView;
+        _loaderText = MyText.executing;
+
+        var userName = user.UserName;
+        var currentIndex = _users.FindIndex(r => r.Id == user.Id);
+
+        try
+        {
+            bool? confirmation = await dialogService.Confirm($"{MyText.confirmDelete} {userName} ?", MyText.deleteRole);
+            if (confirmation == true)
+            {
+                var response = await _userService!.UpdateRow(null, $"{ApiRoutes.v1}/{ApiRoutes.Users.ToggleUsers}/{user.Id}");
+                if (response.Success)
+                {
+                    await HandleSuccessfulUserDeletion(currentIndex, userName);
+                }
+                else
+                {
+                    var errorMessages = response.ErrorResponse.Errors.Values.SelectMany(list => list).ToList();
+                    NotificationRef.ShowNotifications(MyText.error, string.Join(Environment.NewLine, errorMessages), NotificationSeverity.Error, 5000);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationRef.ShowNotifications(MyText.error, $"{MyText.deletionFailed}: {ex.Message}");
+        }
+        finally
+        {
+            _customLoader = false;
+        }
+    }
+
+    private async Task HandleSuccessfulUserDeletion(int currentIndex, string userName)
+    {
+        await LoadUsers();
+        SearchUsersStatus();
+
+        if (!_isCardView)
+            await UpdateGridAfterUserDeletion(currentIndex);
+
+        NotificationRef.ShowNotifications(MyText.deletedSuccessfully, $"{userName} {MyText.deletedSuccessfully}");
+    }
+
+    private async Task UpdateGridAfterUserDeletion(int currentIndex)
+    {
+        if (!_isCardView)
+        {
+            var targetUser = GetTargetUserAfterDeletion(currentIndex);
+
+            if (targetUser != null)
+            {
+                _selectedUser = new List<UserViewModel> { targetUser };
+                await _grid.Reload();
+                await radzenGridFunction.GoToPageByAsync(_users, targetUser, _grid, (r1, r2) => r1.Id == r2.Id);
+            }
+        }
+    }
+
+    private UserViewModel? GetTargetUserAfterDeletion(int currentIndex)
+    {
+        return currentIndex > 0
+            ? _users.ElementAtOrDefault(currentIndex - 1) // Previous row
+            : _users.FirstOrDefault(); // First row
+    }
+
+    #endregion
+
+    #endregion
+
+    #region "Helper Methods"
+
+    private void ToggleView()
+    {
+        _isCardView = !_isCardView;
+        storageService.SetItemAsync(Strings.UserCardView, _isCardView);
+    }
+
+    private void SearchUsersStatus()
+    {
+        _users = GlobalFunctions.SearchEntitiesStatus(
+                     _originalUsers,
+                     _searchText,
+                     _selectedColumn,
+                     _selectedSearchType,
+                     _selectedDeleteFilter,
+                     c => c.IsDisabled
+        );
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hotKeysContext != null)
+            await _hotKeysContext.DisposeAsync();
+    }
+
+    #endregion
+
+    #region "Export Methods"
+
+    private async Task ExportGrid(ExportType exportType)
+    {
+        _customLoader = true;
+        _loaderText = MyText.executing;
+
+        if (_users != null && _users.Any())
+        {
+            List<UserExportViewModel> exportData = new();
+            List<Dictionary<string, object>> formattedExportData = new();
+
+            Dictionary<string, string> columnTitles = new Dictionary<string, string>
+                                {
+                                    { nameof(UserViewModel.Id), MyText.id },
+                                    { nameof(UserViewModel.FirstName), MyText.firstName },
+                                    { nameof(UserViewModel.LastName), MyText.lastName },
+                                    { nameof(UserViewModel.UserName), MyText.username },
+                                    { nameof(UserViewModel.Email), MyText.email },
+                                    { nameof(UserViewModel.IsDisabled), MyText.isDisabled },
+                                    { nameof(UserViewModel.Roles), MyText.roles },
+                                };
+
+            if (!_isCardView)
+            {
+                var pickedColumns = _grid.ColumnsCollection
+                                        .Where(c => c.Pickable && c.Visible)
+                                        .Select(c => c.Property);
+
+                if (!string.IsNullOrEmpty(_grid.Query.Filter))
+                {
+                    var query = _grid.Query.Filter;
+                    var filteredRoles = _users.AsQueryable().Where(query).ToList();
+
+                    exportData = mapper.Map<List<UserExportViewModel>>(filteredRoles).ToList();
+                }
+                else
+                {
+                    exportData = mapper.Map<List<UserExportViewModel>>(_users).ToList();
+                }
+
+                formattedExportData = exportHelper.ConvertToDictionary(exportData, columnTitles, null);
+            }
+            else
+            {
+                exportData = mapper.Map<List<UserExportViewModel>>(_users).ToList();
+                formattedExportData = exportHelper.ConvertToDictionary(exportData, columnTitles, null);
+            }
+
+            await exportListService.ExportAsync(exportType, formattedExportData, Strings.Users, MyText.pdfUsersTitle, AppCulture);
+        }
+        _customLoader = false;
+    }
+
+    #endregion
+}
+
+
+
+

@@ -1,0 +1,227 @@
+﻿@page "/main-dashboard"
+
+@using TechnicalSupport.Client.Core.Services.Dashboard
+@using TechnicalSupport.Client.Core.Services.StructService
+@using TechnicalSupport.Client.ViewModels.Dashboard
+
+@implements IAsyncDisposable
+@attribute [Authorize(Roles = AppRoles.admin)]
+
+@if (Visible)
+{
+    <RadzenStack>
+        <DashboardStats CompanyCount="_statsCompanyCount"
+                        UserCount="_statsUserCount"
+                        CompanyUserCount="_statsCompanyUserCount"
+                        ServerAddressCount="_statsServerAddressCount" />
+
+        <DashboardCharts CompaniesWithUserCounts="_companiesWithCompanyUserCounts"
+                         ServersWithCompaniesCount="_serversWithCompanniesCount" />
+
+        
+    </RadzenStack>
+}
+
+<Notification @ref="_notificationRef" />
+
+@code {
+    #region "Parameters"
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> CustomLoaderChanged { get; set; }
+    #endregion
+
+    #region "Cascading Parameters & Injects"
+
+    private I18nText.MyText MyText = new();
+
+    [CascadingParameter(Name = Strings.CurrentTheme)]
+    public string? CurrentTheme { get; set; }
+
+    [CascadingParameter(Name = Strings.CurrentCulture)]
+    public string? AppCulture { get; set; }
+
+    [CascadingParameter]
+    protected Task<AuthenticationState>? AuthState { get; set; }
+
+    [Inject] private IDashboardDataService _dashboardDataService { get; set; }
+    [Inject] private IDashboardSignalRService _signalRService { get; set; }
+    [Inject] private IDashboardNotificationService _dashboardNotification { get; set; }
+    [Inject] private IDashboardNavigationService _navigationService { get; set; }
+
+    #endregion
+
+    #region "Private Fields"
+
+    private bool _customLoader = true;
+    private bool CustomLoader
+    {
+        get => _customLoader;
+        set
+        {
+            if (_customLoader != value)
+            {
+                _customLoader = value;
+                _ = CustomLoaderChanged.InvokeAsync(value); // notify parent
+            }
+        }
+    }
+
+    private string _loaderText => AppCulture == Strings.ar ? "جاري التحميل" : "Loading";
+    private Notification? _notificationRef;
+    private RadzenDataGrid<CompanyViewModel>? _dataGrid;
+    private ClaimsPrincipal? user { get; set; }
+    private bool IsAdmin => user!.IsInRole(AppRoles.admin);
+
+    // Data Collections
+    private List<CompanyViewModel> _companies = [];
+    private List<UserViewModel> _users = [];
+    private List<CompanyUsersViewModel> _companyUsers = [];
+    private List<ServersAddressViewModel> _serversAddress = [];
+    private IList<CompanyViewModel> _selectedCompany = new List<CompanyViewModel>();
+    private List<CompanyWithUserCount> _companiesWithCompanyUserCounts = [];
+    private List<ServersWithCompanyCount> _serversWithCompanniesCount = [];
+
+    // Stats counts (updated via SignalR)
+    private int _statsCompanyCount = 0;
+    private int _statsUserCount = 0;
+    private int _statsCompanyUserCount = 0;
+    private int _statsServerAddressCount = 0;
+
+    #endregion
+
+    #region "Grid Reference Handler"
+
+    private void HandleGridReference(RadzenDataGrid<CompanyViewModel> gridReference)
+    {
+        _dataGrid = gridReference;
+        // Now _dataGrid is available for navigation and other operations
+    }
+
+    #endregion
+
+    #region "Lifecycle Methods"
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            user = (await AuthState!).User;
+
+            // Load initial data
+            await LoadAllData();
+
+            // Setup SignalR
+            await _signalRService.InitializeAsync(OnDataUpdated);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error during initialization: {ex.Message}");
+        }
+        finally
+        {
+            CustomLoader = false; // notify parent here
+        }
+    }
+
+    private async Task LoadAllData()
+    {
+        await Task.WhenAll(
+            LoadCompaniesData(),
+            LoadUsersData(),
+            LoadCompanyUsersData(),
+            LoadServersAddressData()
+        );
+    }
+
+    private async Task LoadCompaniesData(int count = 0)
+    {
+        var data = await _dashboardDataService.LoadCompanyRelatedDataAsync();
+        this._companies = data.Companies;
+        _companiesWithCompanyUserCounts = data.CompaniesWithUserCounts;
+        _serversWithCompanniesCount = data.ServersWithCompaniesCount;
+        _statsCompanyCount = _companies?.Count ?? count;
+
+        _selectedCompany = new List<CompanyViewModel> { _companies?.LastOrDefault() };
+
+        // Navigate to last page only if grid reference is available
+        if (_dataGrid != null)
+        {
+            await _navigationService.NavigateToLastPageAsync(_dataGrid);
+        }
+    }
+
+    private async Task LoadUsersData()
+    {
+        _users = await _dashboardDataService.LoadUsersAsync();
+        _statsUserCount = _users?.Count ?? 0;
+    }
+
+    private async Task LoadCompanyUsersData()
+    {
+        var data = await _dashboardDataService.LoadCompanyUserRelatedDataAsync();
+        _companyUsers = data.CompanyUsers;
+        _companiesWithCompanyUserCounts = data.CompaniesWithUserCounts;
+        _statsCompanyUserCount = _companyUsers?.Count ?? 0;
+    }
+
+    private async Task LoadServersAddressData()
+    {
+        var data = await _dashboardDataService.LoadServerRelatedDataAsync();
+        _serversAddress = data.ServersAddress;
+        _serversWithCompanniesCount = data.ServersWithCompaniesCount;
+        _statsServerAddressCount = _serversAddress?.Count ?? 0;
+    }
+
+    private async Task OnDataUpdated(string updateType, object data)
+    {
+        try
+        {
+            var count = Convert.ToInt32(data);
+
+            switch (updateType)
+            {
+                case "Company":
+                    await LoadCompaniesData(count);
+                    await _dashboardNotification.ShowCompanyUpdateNotificationAsync(
+                        _notificationRef,
+                        "New Company Added",
+                        _statsCompanyCount
+                    );
+                    await _navigationService.NavigateToLastPageAsync(_dataGrid);
+                    break;
+
+                case "User":
+                    _statsUserCount = count;
+                    break;
+
+                case "CompanyUser":
+                    _statsCompanyUserCount = count;
+                    break;
+
+                case "ServerAddress":
+                    _statsServerAddressCount = count;
+                    break;
+
+                default:
+                    Console.WriteLine($"Unknown update type: {updateType}");
+                    break;
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error updating {updateType} stats count: {ex.Message}");
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_signalRService != null)
+        {
+            await _signalRService.DisposeAsync();
+        }
+    }
+
+    #endregion
+}

@@ -1,0 +1,494 @@
+﻿@page "/serversAddress"
+
+@implements IAsyncDisposable
+@inherits StateComponentBase
+
+<MyMenuBar AddNew="AddServerAddress"
+           ButtonText="@MyText.addserverAddress"
+           ExportGrid="ExportGrid"
+           IsGridView="@_isCardView"
+           ToggleView="@ToggleView"
+           SelectedDeleteFilter="@_selectedDeleteFilter"
+           OnDeleteFilterChange="@OnDeleteFilterChange" />
+
+@if (_customLoader)
+{
+    <MyLoader2 LoaderText="@_loaderText" />
+}
+
+@if (_isLoading)
+{
+    <MyLoader />
+}
+else
+{
+    @if (!_isCardView)
+    {
+        <MyGrid GridSource="_serversAddress"
+                SelectedItems="_selectedServerAddress"
+                TItem="ServersAddressViewModel"
+                OnGridInitialized="SetGridReference"
+                @ref="_grid"
+                OnEditItem="(e) => EditServerAddress(e)"
+                OnDeleteItem="(e) => DeleteServerAddress(e)"
+                DeletePermission="_canDelete"
+                RowEvent="(e) => RowEvent(e.Data)"
+                GridSettingsName="@StorageKeys.ServersAddressGridSettings">
+
+            <GridColumns>
+
+                <MyGridColumn TItem="ServersAddressViewModel"
+                              ColumnName="@nameof(ServersAddressViewModel.Id)"
+                              Width="100px"
+                              Frozen="true"
+                              TextName="@MyText.id" />
+
+                <MyGridColumn TItem="ServersAddressViewModel"
+                              ColumnName="@nameof(ServersAddressViewModel.Address)"
+                              TextName="@MyText.name" />
+
+                <MyToggledColumn TItem="ServersAddressViewModel"
+                                 Width="85px"
+                                 Condition="@(c => c.IsDeleted)" />
+
+            </GridColumns>
+        </MyGrid>
+    }
+    else
+    {
+        <MyMenuBarForCardView Columns="@_columns"
+                              SelectedColumn="@_selectedColumn"
+                              OnSearchTextChanged="@OnSearchChange"
+                              OnSelectedColumnChanged="@SelectedColumnChanged"
+                              OnSelectedSearchTypeChanged="@SelectedSearchTypeChanged"
+                              OnSearch="@SearchServersAddressStatus" />
+
+        <MyCardViewPaging TItem="ServersAddressViewModel"
+                          Items="_serversAddress"
+                          GetName="serverAddress => serverAddress.Address.ToString()"
+                          IsDeleted="serverAddress => serverAddress.IsDeleted"
+                          EditItem="EditServerAddress"
+                          DeleteItem="DeleteServerAddress"
+                          DeletePermission="_canDelete"
+                          OnCardClick="RowEvent">
+
+            <CardBody Context="server">
+                <MyCardLabel Label="@MyText.id" Content="@server.Id" />
+            </CardBody>
+
+        </MyCardViewPaging>
+    }
+    <Notification @ref="NotificationRef" />
+}
+
+@code {
+
+    #region "Cascading Parameters"
+
+    [CascadingParameter(Name = Strings.CurrentCulture)]
+    public string? AppCulture { get; set; }
+
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthState { get; set; }
+
+    #endregion
+
+    #region "Injects"
+
+    [Inject]
+    private IMainService<ServersAddressViewModel>? _serverAddressService { get; set; }
+
+    [Inject]
+    protected IAuthorizationService _authService { get; set; } = default!;
+
+    #endregion
+
+    #region "Variables"
+
+    private I18nText.MyText MyText = new();
+
+    private Notification NotificationRef;
+
+    private bool _isLoading = false;
+
+    private bool _isCardView = true;
+
+    private HotKeysContext? _hotKeysContext;
+
+    private ServersAddressViewModel _serverAddress = new();
+
+    private List<ServersAddressViewModel> _serversAddress = new();
+
+    private List<ServersAddressViewModel> _originalServerAddress = new();
+
+    private RadzenDataGrid<ServersAddressViewModel> _grid;
+
+    private List<SimpleCompanyViewModel> _mappedCompanies = new();
+
+    private List<ServersAddressViewModel> _selectedServerAddress = new();
+
+    private ServersAddressViewModel? EditedServerAddress { get; set; }
+
+    private List<DropDownItem> _columns = new();
+
+    private string _searchText = string.Empty;
+
+    private string _selectedColumn = string.Empty;
+
+    private string _selectedSearchType = string.Empty;
+
+    private string _selectedDeleteFilter = Strings.Active;
+
+    private DialogOptions _options = new() { Width = "500px", Height = "220px", ShowClose = false };
+
+    private bool _customLoader;
+
+    private string _loaderText = string.Empty;
+
+    private bool _canView;
+    private bool _canEdit;
+    private bool _canDelete;
+    private bool _canCreate;
+
+    #endregion
+
+    #region "LifeCycle Methods"
+
+    protected override async Task OnInitializedAsync()
+    {
+        await InitializeComponentData();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadLocalizedText();
+        await ViewSate();
+        InitializeSearchTypes();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            _hotKeysContext = this.HotKeys.CreateContext().Add(Code.F4, AddServerAddress);
+    }
+
+    private async Task InitializeComponentData()
+    {
+        _isLoading = true;
+
+        await LoadPermissions();
+        await LoadLocalizedText();
+        await LoadServerAddress();
+        SearchServersAddressStatus();
+
+        _isLoading = false;
+    }
+
+    private async Task LoadPermissions()
+    {
+        var user = (await AuthState).User;
+
+        _canView = await _authService.HasPermissionAsync(user, Permissions.ViewServers);
+        _canCreate = await _authService.HasPermissionAsync(user, Permissions.CreateServers);
+        _canEdit = await _authService.HasPermissionAsync(user, Permissions.EditServers);
+        _canDelete = await _authService.HasPermissionAsync(user, Permissions.DeleteServers);
+    }
+
+    private async Task ViewSate()
+    {
+        _isCardView = await storageService.GetItemAsync<bool>(Strings.ServersCardView);
+    }
+
+    private async Task LoadLocalizedText()
+    {
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+    }
+
+    private void InitializeSearchTypes()
+    {
+        _columns = new List<DropDownItem>
+        {
+            new DropDownItem { Text = AppCulture == Strings.ar ? Strings.AddressAr :Strings.AddressEn, Value = Strings.Address },
+        };
+
+        if (string.IsNullOrEmpty(_selectedColumn) || !_columns.Any(c => c.Value == _selectedColumn))
+        {
+            _selectedColumn = _columns.FirstOrDefault()?.Value ?? string.Empty;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task<List<SimpleCompanyViewModel>> GetRelatedCompanies(int selectedServer)
+    {
+        var Server = await _serverAddressService!.GetRow($"{ApiRoutes.v1}/{ApiRoutes.ServersAddress.GetServersAddressWithCompanies}/{selectedServer}");
+
+        if (Server != null && Server.Companies != null)
+        {
+            _mappedCompanies = mapper.Map<List<SimpleCompanyViewModel>>(Server.Companies);
+        }
+
+        return _mappedCompanies;
+    }
+
+    #endregion
+
+    #region "Events"
+
+    void RowEvent(ServersAddressViewModel serverAddress)
+    {
+        NavManager!.NavigateTo($"/{Strings.ServerCompanies}/{serverAddress.Id}");
+    }
+
+    private void SetGridReference(RadzenDataGrid<ServersAddressViewModel> gridReference) => _grid = gridReference;
+
+    private void OnSearchChange(string newValue) => _searchText = newValue;
+
+    private void SelectedColumnChanged(string newValue) => _selectedColumn = newValue;
+
+    private void SelectedSearchTypeChanged(string newValue) => _selectedSearchType = newValue;
+
+    private void OnDeleteFilterChange(object value)
+    {
+        _selectedDeleteFilter = value.ToString();
+        SearchServersAddressStatus(); // Reapply the filter whenever the delete filter changes
+    }
+
+    #endregion
+
+    #region "CrudOperations"
+
+    private async Task LoadServerAddress()
+    {
+        var result = await _serverAddressService!.GetAll($"{ApiRoutes.v1}/{ApiRoutes.ServersAddress.GetAllServersAddress}");
+        _serversAddress = result;
+        _selectedServerAddress = new List<ServersAddressViewModel> { _serversAddress?.LastOrDefault() };
+        _originalServerAddress = new List<ServersAddressViewModel>(_serversAddress);
+    }
+
+    private async Task AddServerAddress()
+    {
+        var parameters = new Dictionary<string, object>
+                            {
+                                { Strings.OnError, EventCallback.Factory.Create<List<string>>(this, HandleError) },
+                                { Strings.OnSuccess, EventCallback.Factory.Create(this, () => HandleSuccess(false)) }
+                            };
+
+        var result = await dialogService.OpenAsync<ServerAddressForm>(MyText.addserverAddress, parameters, _options);
+    }
+
+    private async Task EditServerAddress(ServersAddressViewModel serverAddress)
+    {
+        var parameters = new Dictionary<string, object>
+            {
+                { Strings.OnError, EventCallback.Factory.Create<List<string>>(this, HandleError) },
+                { Strings.OnSuccess, EventCallback.Factory.Create(this, () => HandleSuccess(true, serverAddress)) }, // Pass the edited serverAddress here
+                { Strings.EditedServerAddress, serverAddress }
+            };
+
+        await dialogService.OpenAsync<ServerAddressForm>(MyText.editserverAddress, parameters, _options);
+    }
+
+    private void HandleError(List<string> errors)
+    {
+        foreach (var error in errors)
+        {
+            NotificationRef.ShowNotifications(error, Strings.Error, NotificationSeverity.Error);
+        }
+    }
+
+    private async Task HandleSuccess(bool isEdit, ServersAddressViewModel editedServerAddress = null)
+    {
+        await LoadServerAddress();
+        SearchServersAddressStatus();
+
+        if (isEdit && editedServerAddress != null)
+        {
+            isEdit = false;
+            NotificationRef.ShowNotifications(MyText.notificationEditSummary, $"{MyText.notificationEditDetail} {editedServerAddress.Address} {MyText.successEdit}");
+            StateHasChanged();
+            _selectedServerAddress = new List<ServersAddressViewModel> { _serversAddress?.FirstOrDefault(s => s.Id == editedServerAddress.Id) };
+
+            if (!_isCardView)
+                await radzenGridFunction.GoToPageByAsync(_serversAddress, editedServerAddress, _grid, (c1, c2) => c1.Id == c2.Id);
+        }
+        else
+        {
+            var lastServerAddress = _serversAddress?.LastOrDefault();
+            if (lastServerAddress != null)
+            {
+                NotificationRef.ShowNotifications(MyText.notificationSaveSummary, $"{MyText.notificationSaveDetail} {lastServerAddress.Address} {MyText.successSave}");
+                StateHasChanged();
+
+                _selectedServerAddress = new List<ServersAddressViewModel> { lastServerAddress };
+
+                if (!_isCardView)
+                    await radzenGridFunction.GoToPageByAsync(_serversAddress, lastServerAddress, _grid, (c1, c2) => c1.Id == c2.Id);
+            }
+        }
+    }
+
+    private async Task DeleteServerAddress(ServersAddressViewModel serverAddress)
+    {
+        if (!_isCardView)
+        {
+            _customLoader = true;
+            _loaderText = MyText.executing;
+        }
+
+        var deleteName = serverAddress.Address;
+        var currentIndex = _serversAddress.FindIndex(sa => sa.Id == serverAddress.Id);
+
+        bool? confirmation = await dialogService.Confirm($"{MyText.confirmDelete} {deleteName} ?", MyText.deleteServer);
+        if (confirmation == true)
+        {
+            await PerformServerAddressDeletion(serverAddress);
+
+            await UpdateGridAfterServerAddressDeletion(currentIndex);
+
+            _customLoader = false;
+        }
+        else
+        {
+            _customLoader = false;
+        }
+    }
+
+    private async Task PerformServerAddressDeletion(ServersAddressViewModel serverAddress)
+    {
+        var deleteName = serverAddress.Address;
+        var response = await _serverAddressService!.DeleteRow($"{ApiRoutes.v1}/{ApiRoutes.ServersAddress.DeleteServerAddress}/{serverAddress.Id}");
+
+        if (response.Success)
+        {
+            NotificationRef.ShowNotifications(MyText.deletedSuccessfully, $"{deleteName} {MyText.deletedSuccessfully}");
+        }
+        else
+        {
+            var error = response.ErrorResponse.Errors.Values.SelectMany(list => list).ToList().FirstOrDefault();
+            NotificationRef.ShowNotifications(MyText.deletedFailed, error, NotificationSeverity.Error, 5000);
+        }
+
+        await LoadServerAddress();
+        SearchServersAddressStatus();
+        StateHasChanged();
+    }
+
+    private async Task UpdateGridAfterServerAddressDeletion(int currentIndex)
+    {
+        if (!_isCardView)
+        {
+            ServersAddressViewModel? targetServerAddress = GetTargetServerAddressAfterDeletion(currentIndex);
+
+            if (targetServerAddress != null)
+            {
+                _selectedServerAddress = new List<ServersAddressViewModel> { targetServerAddress };
+                await _grid.Reload();
+                await radzenGridFunction.GoToPageByAsync(_serversAddress, targetServerAddress, _grid, (sa1, sa2) => sa1.Id == sa2.Id);
+            }
+        }
+    }
+
+    private ServersAddressViewModel? GetTargetServerAddressAfterDeletion(int currentIndex)
+    {
+        if (currentIndex > 0)
+        {
+            return _serversAddress.ElementAtOrDefault(currentIndex - 1); // Previous row
+        }
+
+        return _serversAddress.FirstOrDefault(); // First row
+    }
+
+
+    #endregion
+
+    #region "Helper Methods"
+
+    private void ToggleView()
+    {
+        _isCardView = !_isCardView;
+        storageService.SetItemAsync(Strings.ServersCardView, _isCardView);
+    }
+
+    private void SearchServersAddressStatus()
+    {
+        _serversAddress = GlobalFunctions.SearchEntitiesStatus(
+                           _originalServerAddress,
+                           _searchText,
+                           _selectedColumn,
+                           _selectedSearchType,
+                           _selectedDeleteFilter,
+                           c => c.IsDeleted
+        );
+    }
+
+    public async ValueTask DisposeAsync() // 👈 Add "DisposeAsync" method.
+    {
+        // 👇 Add this
+        if (_hotKeysContext != null)
+        {
+            await _hotKeysContext.DisposeAsync();
+        }
+    }
+
+    #endregion
+
+    #region "Export Methods"
+
+    private async Task ExportGrid(ExportType exportType)
+    {
+        _customLoader = true;
+        _loaderText = MyText.executing;
+
+        if (_serversAddress != null && _serversAddress.Any())
+        {
+            List<ServerAddressExportModel> exportData = new();
+            List<Dictionary<string, object>> formattedExportData = new();
+
+            Dictionary<string, string> columnTitles = new Dictionary<string, string>
+                                {
+                                    { nameof(ServersAddressViewModel.Id), MyText.id },
+                                    { nameof(ServersAddressViewModel.Address), MyText.address }
+                                };
+
+            if (!_isCardView)
+            {
+                var pickedColumns = _grid.ColumnsCollection
+                                        .Where(c => c.Pickable && c.Visible)
+                                        .Select(c => c.Property);
+
+                if (!string.IsNullOrEmpty(_grid.Query.Filter))
+                {
+                    var query = _grid.Query.Filter;
+                    var filteredServers = _serversAddress.AsQueryable().Where(query).ToList();
+
+                    exportData = mapper.Map<List<ServerAddressExportModel>>(filteredServers).ToList();
+                }
+                else
+                {
+                    exportData = mapper.Map<List<ServerAddressExportModel>>(_serversAddress).ToList();
+                }
+
+                formattedExportData = exportHelper.ConvertToDictionary(exportData, columnTitles);
+            }
+            else
+            {
+                exportData = mapper.Map<List<ServerAddressExportModel>>(_serversAddress).ToList();
+
+                formattedExportData = exportHelper.ConvertToDictionary(exportData, columnTitles);
+            }
+
+            await exportListService.ExportAsync(exportType, formattedExportData, Strings.ServersAddress, MyText.pdfServersTitle, AppCulture);
+        }
+
+        _customLoader = false;
+    }
+
+    #endregion
+}
+
+
+
+
+
+

@@ -1,0 +1,47 @@
+﻿@page "/show-media/{id:guid}/{fileExtension}"
+
+<RadzenRow Style="height:calc(100vh - 120px)" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center">
+    @if (allowedExtensions.Contains(fileExtension()))
+    {
+        <iframe id="reportFrame"
+                style="width: 100%; height: 100%; margin:auto;"
+                src="@videoUrl">
+        </iframe>
+    }
+    else
+    {
+        <img src="@videoUrl" alt="Image Viewer" style="max-width: 100%; max-height: 100%; object-fit:cover" />
+    }
+</RadzenRow>
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    [Parameter]
+    public string FileExtension { get; set; }
+
+    private List<string> allowedExtensions = ["mp4", "webm", "pdf", "mp3", "rpt"];
+
+    private string fileExtension() => FileExtension.Substring(1).ToLower();
+
+    private bool isAuthorized = false;
+
+    private string videoUrl = string.Empty;
+
+    private string GetBaseUrl() => Configuration.GetSection(Strings.MainApiAddress)!.Value;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var isUserAuthorized = await fileService.CheckAuthorizationAsync();
+
+        if (isUserAuthorized)
+        {
+            videoUrl = $"{GetBaseUrl()}{ApiRoutes.v1}/{ApiRoutes.UploadFiles.DownLoadStream}/{Id}";
+        }
+        else
+        {
+            isAuthorized = false;
+        }
+    }
+}

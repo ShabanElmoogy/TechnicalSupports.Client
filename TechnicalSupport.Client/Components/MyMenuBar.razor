@@ -1,0 +1,57 @@
+﻿
+<RadzenCard class="rz-border-radius-2 rz-shadow-4 rz-mb-3">
+    <RadzenRow JustifyContent="JustifyContent.SpaceBetween">
+
+        <MyExportButton OnExport="@ExportGrid" />
+
+        <MySwitchBetweenCardAndGrid IsGridView="@IsGridView" 
+                                    ToggleView="@ToggleView"
+                                    ShowSwitchBetweenCardAndGrid="ShowSwitchBetweenCardAndGrid" />
+
+        <MyDropDownStatus SelectedDeleteFilter="@SelectedDeleteFilter" 
+                          OnDeleteFilterChange="@OnDeleteFilterChange" 
+                          ShowDropDownStatus="@ShowDropDownStatus" />
+
+        <MyAddButton AddNew="@AddNew" 
+                     ButtonText="@ButtonText"
+                     ShowAddButton="ShowAddButton" />
+
+    </RadzenRow>
+</RadzenCard>
+
+
+@code {
+    #region Parameters
+
+    [Parameter]
+    public bool ShowAddButton { get; set; } = true;
+
+    [Parameter]
+    public bool ShowDropDownStatus { get; set; } = true;  
+    
+    [Parameter]
+    public bool ShowSwitchBetweenCardAndGrid { get; set; } = true;
+
+    [Parameter]
+    public EventCallback<ExportType> ExportGrid { get; set; }
+
+    [Parameter]
+    public EventCallback<object> OnDeleteFilterChange { get; set; }
+
+    [Parameter]
+    public EventCallback ToggleView { get; set; }
+
+    [Parameter]
+    public EventCallback AddNew { get; set; }
+
+    [Parameter]
+    public string ButtonText { get; set; }
+
+    [Parameter]
+    public bool IsGridView { get; set; }
+
+    [Parameter]
+    public string SelectedDeleteFilter { get; set; }
+
+    #endregion
+}

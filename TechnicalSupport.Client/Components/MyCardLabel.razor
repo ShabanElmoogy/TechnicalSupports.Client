@@ -1,0 +1,70 @@
+﻿<RadzenRow Style="margin-bottom:5px" JustifyContent="JustifyContent.SpaceBetween">
+
+    <RadzenLabel class="fw-bold">@Label</RadzenLabel>
+
+    <RadzenText>@Content?.ToString()?.MinimizeString(35)</RadzenText>
+
+    <RadzenIcon Icon="@GoogleIcons.CopyToClipboard"
+                style="cursor:pointer; transition: transform 0.2s, color 0.2s;"
+                class="hover-scale"
+                MouseEnter="@(args => ShowTooltip(_elementReference!.Element, new TooltipOptions() { Position = TooltipPosition.Top }))"
+                @ref="_elementReference"
+                @onmouseenter:stopPropagation="true"
+                @onclick="CopyContentToClipboard">
+
+        <RadzenTooltip>@Strings.CopyToClipboard</RadzenTooltip>
+    </RadzenIcon>
+</RadzenRow>
+
+<style>
+    .hover-scale {
+        transition: transform 0.5s ease, color 0.5s ease;
+    }
+
+        .hover-scale:hover {
+            transform: scale(1.1);
+            color: indianred;
+        }
+</style>
+
+@code {
+
+    #region Parameters
+   
+    [Parameter]
+    public string? Label { get; set; }
+
+    [Parameter]
+    public object? Content { get; set; }
+
+    #endregion
+
+    #region Variables
+
+    private RadzenIcon? _elementReference;
+
+    #endregion
+
+    #region Methods
+
+    private async Task CopyContentToClipboard(MouseEventArgs args) => await CopyToClipBoard(Content.ToString());
+
+    private void ShowTooltip(ElementReference elementReference, TooltipOptions options = null)
+        => tooltipService.Open(elementReference, Strings.CopyToClipboard, options);
+
+    private async Task CopyToClipBoard(string content)
+    {
+        if (!string.IsNullOrEmpty(content))
+        {
+            await jsRuntime.CopyTextToClipboard(content);
+            tooltipService.Close();
+            tooltipService.Open(_elementReference.Element, Strings.Copied, new TooltipOptions() { Position = TooltipPosition.Top });
+
+
+            await Task.Delay(1000);
+            tooltipService.Close();
+        }
+    }
+
+    #endregion
+}

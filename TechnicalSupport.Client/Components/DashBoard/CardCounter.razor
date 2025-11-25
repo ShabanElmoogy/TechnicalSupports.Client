@@ -1,0 +1,27 @@
+﻿<RadzenColumn SizeSM="6" SizeLG="2">
+
+    <RadzenCard Variant="Variant.Filled" class="rz-my-1 rz-mx-auto" Style="border-radius: 10px;">
+        <RadzenStack JustifyContent="JustifyContent.SpaceBetween" Gap="1rem" class="rz-p-2">
+
+            <RadzenImage Path="@Image" class="rz-mx-auto" Style="width: 75px; height: 75px; object-fit: cover; border-radius: 8px;" />
+
+            <RadzenStack Orientation="Orientation.Vertical" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.SpaceBetween">
+                @*  <RadzenText TextStyle="TextStyle.H6" class="rz-m-0 text-align:center">@Title</RadzenText> *@
+                <RadzenLabel Text="@Title" Style="text-align:center"></RadzenLabel>
+                <RadzenText TextStyle="TextStyle.H2" class="rz-m-0" Style="font-weight: bold; color: #4CAF50;">@Counter</RadzenText>
+            </RadzenStack>
+        </RadzenStack>
+    </RadzenCard>
+
+</RadzenColumn>
+
+@code {
+    [Parameter]
+    public string? Title { get; set; }
+
+    [Parameter]
+    public int Counter { get; set; }
+
+    [Parameter]
+    public string? Image { get; set; }
+}

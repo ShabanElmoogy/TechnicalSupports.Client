@@ -1,0 +1,546 @@
+﻿@* @page "/main-dashboard"
+
+@using TechnicalSupport.Client.Core.Services.StructService
+@using TechnicalSupport.Client.ViewModels.Dashboard
+
+@implements IAsyncDisposable
+@attribute [Authorize(Roles = AppRoles.admin)]
+
+@if (_customLoader)
+{
+    <MyLoader2 LoaderText="@_loaderText" />
+}
+else
+{
+    <RadzenCard Style="margin-bottom:10px" id="top">
+        <RadzenRow JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Style="margin-bottom: 10px">
+
+            <CardCounter Title="@MyText.companies" Counter="_companies.cou" Image="images/company.jpg" />
+            <CardCounter Title="@MyText.systemUsers" Counter="_users.Count" Image="images/users.jpg" />
+            <CardCounter Title="@MyText.companyUsers" Counter="_companyUsers.Count" Image="images/companyusers.jpg" />
+            <CardCounter Title="@MyText.servers" Counter="_serversAddress.Count" Image="images/servers.jpg" />
+
+            <dotlottie-player src="/animations/Test_Animate.json"
+                              background="transparent"
+                              speed="1"
+                              class="dotlottie-player"
+                              style="width: 200px; height: 200px;"
+                              loop autoplay>
+            </dotlottie-player>
+
+        </RadzenRow>
+    </RadzenCard>
+
+    <RadzenRow>
+        <RadzenColumn SizeLG="6" Style="width: 100%;">
+            <RadzenCard Style="margin-bottom:10px">
+                <RadzenStack Style="width: 100%;">
+                    <RadzenChart>
+                        <RadzenDonutSeries Data="@_companiesWithCompanyUserCounts"
+                                           TItem="CompanyWithUserCount"
+                                           CategoryProperty="CompanyName"
+                                           ValueProperty="CompanyUserCount"
+                                           TotalAngle="180"
+                                           StartAngle="180">
+                            <ChildContent>
+                                <RadzenSeriesDataLabels Visible="true" />
+                            </ChildContent>
+                        </RadzenDonutSeries>
+                    </RadzenChart>
+                    <RadzenText Text="@MyText.companyUsersCountInCompanies" TextAlign="TextAlign.Center" TextStyle="TextStyle.DisplayH6"></RadzenText>
+                </RadzenStack>
+            </RadzenCard>
+        </RadzenColumn>
+
+        <RadzenColumn SizeLG="6" Style="width: 100%;">
+            <RadzenCard Style="margin-bottom:10px">
+                <RadzenStack Style="width: 100%;">
+                    <RadzenChart>
+                        <RadzenPieSeries Data="@_serversWithCompanniesCount"
+                                         TItem="ServersWithCompanyCount"
+                                         Title="Servers"
+                                         CategoryProperty="ServerName"
+                                         ValueProperty="CompanyCount">
+                            <RadzenSeriesDataLabels Visible="true" />
+                        </RadzenPieSeries>
+                    </RadzenChart>
+                    <RadzenText Text="@MyText.companyCountInServers" TextAlign="TextAlign.Center" TextStyle="TextStyle.DisplayH6"></RadzenText>
+                </RadzenStack>
+            </RadzenCard>
+        </RadzenColumn>
+    </RadzenRow>
+
+    <RadzenRow JustifyContent="JustifyContent.Center" AlignItems="AlignItems.Center">
+        <RadzenColumn SizeMD="8">
+            <RadzenCard>
+                <MyGridLabel LabelText="@MyText.companies" />
+
+                <RadzenDataGrid Data="_companies"
+                                TItem="CompanyViewModel"
+                                AllowVirtualization="true"
+                                AllowPaging="true"
+                                PageSize="5"
+                                Density="Density.Compact"
+                                @bind-value="_selectedCompany"
+                                @ref="_dataGrid"
+                                Style="height:200px">
+                    <Columns>
+                        <RadzenDataGridColumn Property="Id"
+                                              Width="100px"
+                                              Frozen="true"
+                                              Title="@MyText.id" />
+
+                        <RadzenDataGridColumn Property="NameAr"
+                                              Width="100px"
+                                              Frozen="true"
+                                              Title="@MyText.companyNameAr" />
+
+                        <RadzenDataGridColumn Property="NameEn"
+                                              Width="100px"
+                                              Frozen="true"
+                                              Title="@MyText.companyNameEn" />
+
+                        <RadzenDataGridColumn Property="ServerDetail.Address"
+                                              Width="100px"
+                                              Frozen="true"
+                                              Title="@MyText.address" />
+                    </Columns>
+                </RadzenDataGrid>
+            </RadzenCard>
+        </RadzenColumn>
+
+        <RadzenColumn SizeMD="4">
+            <RadzenCard>
+                <MyGridLabel LabelText="@MyText.userslist" />
+
+                <RadzenDataGrid Data="_users"
+                                TItem="UserViewModel"
+                                AllowVirtualization="true"
+                                AllowPaging="true"
+                                PageSize="5"
+                                Style="height:200px"
+                                Density="Density.Compact">
+                    <Columns>
+                        <RadzenDataGridColumn Property="UserName"
+                                              Width="100px"
+                                              Frozen="true"
+                                              Title="@MyText.username" />
+                    </Columns>
+                </RadzenDataGrid>
+            </RadzenCard>
+        </RadzenColumn>
+    </RadzenRow>
+}
+
+<Notification @ref="_notificationRef" />
+
+@code {
+    #region "Cascading Parameters & Injects"
+
+    [CascadingParameter(Name = Strings.CurrentTheme)]
+    public string? CurrentTheme { get; set; }
+
+    [CascadingParameter(Name = Strings.CurrentCulture)]
+    public string? AppCulture { get; set; }
+
+    [CascadingParameter]
+    protected Task<AuthenticationState>? AuthState { get; set; }
+
+    [Inject] private IMainService<CompanyViewModel>? _companyService { get; set; }
+    [Inject] private IMainService<UserViewModel>? _userService { get; set; }
+    [Inject] private IMainService<CompanyUsersViewModel>? _companyUsersService { get; set; }
+    [Inject] private IMainService<ServersAddressViewModel>? _serverAddressService { get; set; }
+    [Inject] private IMainService<EntityCountResponse> _dashboardService { get; set; }
+    [Inject] private IMainService<CompanyWithUserCount> _companyWithUserCountService { get; set; }
+    [Inject] private IMainService<ServersWithCompanyCount> _serversWithCompanyCountService { get; set; }
+    [Inject] protected IAuthorizationService _authService { get; set; } = default!;
+
+    #endregion
+
+    #region "Private Fields"
+
+    private HubConnection? _companyHub;
+    private bool _customLoader = true;
+    private string _loaderText => AppCulture == Strings.ar ? "جاري التحميل" : "Loading";
+    private int _currentEditedCompanyId;
+    private Notification? _notificationRef;
+    private RadzenDataGrid<CompanyViewModel>? _dataGrid;
+    private I18nText.MyText MyText = new();
+    private ClaimsPrincipal? user { get; set; }
+    private bool IsAdmin => user!.IsInRole(AppRoles.admin);
+
+    // Data Collections
+    private List<CompanyViewModel> _companies = [];
+    private List<UserViewModel> _users = [];
+    private List<CompanyUsersViewModel> _companyUsers = [];
+    private List<ServersAddressViewModel> _serversAddress = [];
+    private IList<CompanyViewModel> _selectedCompany = new List<CompanyViewModel>();
+    private List<CompanyWithUserCount> _companiesWithCompanyUserCounts = [];
+    private List<ServersWithCompanyCount> _serversWithCompanniesCount = [];
+
+    // Counters
+    private int _companiesCount { get; set; } = 0;
+
+    #endregion
+
+    #region "Data Loading Methods"
+
+    private async Task LoadCompaniesCount()
+    {
+        try
+        {
+            var response = await _dashboardService.GetRow($"{ApiRoutes.v1}/{ApiRoutes.Dashboard.GetCompaniesCount}");
+            _companiesCount = response?.Count ?? 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading companies count: {ex.Message}");
+            _companiesCount = 0;
+        }
+    }
+
+    private async Task LoadCompanies()
+    {
+        try
+        {
+            var result = await _companyService!.GetAll($"{ApiRoutes.v1}/{ApiRoutes.Companies.GetAllCompanies}");
+            _companies = result ?? new List<CompanyViewModel>();
+
+            await LoadCompaniesWithCompanyUsersCount();
+
+            if (_currentEditedCompanyId > 0)
+            {
+                _selectedCompany = new List<CompanyViewModel> { _companies.FirstOrDefault(c => c.Id == _currentEditedCompanyId) };
+            }
+            else
+            {
+                _selectedCompany = new List<CompanyViewModel> { _companies?.LastOrDefault() };
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading companies: {ex.Message}");
+            _companies = new List<CompanyViewModel>();
+        }
+    }
+
+    private async Task LoadUsers()
+    {
+        try
+        {
+            var result = await _userService!.GetAll($"{ApiRoutes.v1}/{ApiRoutes.Users.GetAll}");
+            _users = result?.OrderBy(f => f.CreatedOn).ToList() ?? new List<UserViewModel>();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading users: {ex.Message}");
+            _users = new List<UserViewModel>();
+        }
+    }
+
+    private async Task LoadCompanyUsers()
+    {
+        try
+        {
+            var result = await _companyUsersService!.GetAll($"{ApiRoutes.v1}/{ApiRoutes.CompanyUsers.GetAllCompanyUsers}");
+            _companyUsers = result ?? new List<CompanyUsersViewModel>();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading company users: {ex.Message}");
+            _companyUsers = new List<CompanyUsersViewModel>();
+        }
+    }
+
+    private async Task LoadServerAddress()
+    {
+        try
+        {
+            var result = await _serverAddressService!.GetAll($"{ApiRoutes.v1}/{ApiRoutes.ServersAddress.GetAllServersAddress}");
+            _serversAddress = result ?? new List<ServersAddressViewModel>();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading server addresses: {ex.Message}");
+            _serversAddress = new List<ServersAddressViewModel>();
+        }
+    }
+
+    private async Task LoadCompaniesWithCompanyUsersCount()
+    {
+        try
+        {
+            var response = await _companyWithUserCountService.GetAll($"{ApiRoutes.v1}/{ApiRoutes.Dashboard.GetCompanyWithCompanyUsersCount}");
+            _companiesWithCompanyUserCounts.Clear();
+            _companiesWithCompanyUserCounts.AddRange(response ?? new List<CompanyWithUserCount>());
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading companies with user counts: {ex.Message}");
+            _companiesWithCompanyUserCounts.Clear();
+        }
+    }
+
+    private async Task LoadServersWithCompaniesCount()
+    {
+        try
+        {
+            var response = await _serversWithCompanyCountService.GetAll($"{ApiRoutes.v1}/{ApiRoutes.Dashboard.GetServersWithCompaniesCount}");
+            _serversWithCompanniesCount = new List<ServersWithCompanyCount>(response ?? new List<ServersWithCompanyCount>());
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading servers with company counts: {ex.Message}");
+            _serversWithCompanniesCount = new List<ServersWithCompanyCount>();
+        }
+    }
+
+    #endregion
+
+    #region "SignalR Hub Methods"
+
+    private string? apiAddress => Configuration.GetValue<string>(Strings.MainApiAddress);
+
+    private async Task ConnectToCompanyHub()
+    {
+        try
+        {
+            _companyHub = new HubConnectionBuilder()
+                .WithUrl($"{apiAddress}{SignalRRoutes.CompanyHub}")
+                .Build();
+
+            // Company Updates - REMOVED DUPLICATE
+            _companyHub.On<int>(nameof(SignalRMethods.ReceiveCompanyUpdate), 
+                async (companyCount) =>
+                {            
+                    await UpdateCompanyList(companyCount);
+                });
+
+            // User Updates
+            _companyHub.On<string>(nameof(SignalRMethods.ReceiveUserUpdate), 
+                async (username) =>
+                {
+                    await UpdateUserList(username);
+                });
+
+            // Company User Updates
+            _companyHub.On<string>(nameof(SignalRMethods.ReceiveCompanyUserUpdate), 
+                async (companyUser) =>
+                {
+                    await UpdateCompanyUserList(companyUser);
+                });
+
+            // Server Address Updates
+            _companyHub.On<string>(nameof(SignalRMethods.ReceiveServerAddressUpdate), 
+                async (serverAddress) =>
+                {
+                    await UpdateServerAddressList(serverAddress);
+                });
+
+            await _companyHub.StartAsync();
+            Console.WriteLine("SignalR Hub connected successfully");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error connecting to SignalR Hub: {ex.Message}");
+        }
+    }
+
+    private async Task UpdateCompanyList(int entityCount)
+    {
+        // _currentEditedCompanyId = editedCompanyId;
+
+        await InvokeAsync(async () =>
+        {
+            try
+            {
+                // Update count FIRST before loading data
+                _companiesCount = entityCount;
+                
+                // Then load the updated data
+                await LoadCompanies();
+                await LoadCompaniesWithCompanyUsersCount();
+                await LoadServersWithCompaniesCount();
+
+                StateHasChanged();
+                _notificationRef!.ShowNotifications(MyText.companyUpdated, $"{MyText.companyListUpdated} - {_companiesCount}", NotificationSeverity.Success);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error updating company list: {ex.Message}");
+                _notificationRef!.ShowNotifications("Error", "Failed to update company list", NotificationSeverity.Error);
+            }
+        });
+
+        // // Navigate to appropriate page
+        // if (editedCompanyId > 0)
+        // {
+        //     await NavigateToPageOfEditedCompany(editedCompanyId);
+        // }
+        // else
+        // {
+        //     await NavigateToLastPage();
+        // }
+    }
+
+    private async Task UpdateUserList(string username)
+    {
+        await InvokeAsync(async () =>
+        {
+            try
+            {
+                await LoadUsers();
+                StateHasChanged();
+                _notificationRef!.ShowNotifications(MyText.userUpdated, MyText.userListUpdated + " " + username, NotificationSeverity.Success);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error updating user list: {ex.Message}");
+                _notificationRef!.ShowNotifications("Error", "Failed to update user list", NotificationSeverity.Error);
+            }
+        });
+    }
+
+    private async Task UpdateCompanyUserList(string companyUser)
+    {
+        await InvokeAsync(async () =>
+        {
+            try
+            {
+                await LoadCompanyUsers();
+                await LoadCompaniesWithCompanyUsersCount();
+                StateHasChanged();
+                _notificationRef!.ShowNotifications(MyText.companyUserUpdated, MyText.companyUserListUpdated + " " + companyUser, NotificationSeverity.Success);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error updating company user list: {ex.Message}");
+                _notificationRef!.ShowNotifications("Error", "Failed to update company user list", NotificationSeverity.Error);
+            }
+        });
+    }
+
+    private async Task UpdateServerAddressList(string serverAddress)
+    {
+        await InvokeAsync(async () =>
+        {
+            try
+            {
+                await LoadServerAddress();
+                await LoadServersWithCompaniesCount();
+                StateHasChanged();
+                _notificationRef!.ShowNotifications(MyText.serverAddressUpdated, MyText.serverAddressListUpdated + " " + serverAddress, NotificationSeverity.Success);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error updating server address list: {ex.Message}");
+                _notificationRef!.ShowNotifications("Error", "Failed to update server address list", NotificationSeverity.Error);
+            }
+        });
+    }
+
+    #endregion
+
+    #region "Navigation Methods"
+
+    private async Task NavigateToPageOfEditedCompany(int editedCompanyId)
+    {
+        if (_dataGrid == null || _companies == null || !_companies.Any())
+            return;
+
+        try
+        {
+            var companyIndex = _companies.FindIndex(c => c.Id == editedCompanyId);
+
+            if (companyIndex >= 0)
+            {
+                var pageSize = _dataGrid.PageSize;
+                var pageIndex = companyIndex / pageSize;
+
+                await _dataGrid.GoToPage(pageIndex);
+                _selectedCompany = new List<CompanyViewModel> { _companies[companyIndex] };
+                await InvokeAsync(StateHasChanged);
+            }
+            else
+            {
+                _notificationRef!.ShowNotifications(MyText.companyNotFound, MyText.editedCompanyNotFound, NotificationSeverity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error navigating to company page: {ex.Message}");
+        }
+    }
+
+    private async Task NavigateToLastPage()
+    {
+        if (_dataGrid == null || _companies == null) return;
+
+        try
+        {
+            var pagesize = _dataGrid.PageSize;
+            var count = _dataGrid.Count;
+            var lastpage = (int)Math.Ceiling((double)count / pagesize);
+
+            await _dataGrid.GoToPage(lastpage - 1); // Pages are 0-indexed
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error navigating to last page: {ex.Message}");
+        }
+    }
+
+    #endregion
+
+    #region "Lifecycle Methods"
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+            user = (await AuthState!).User;
+
+            // Load initial data in parallel where possible
+            await Task.WhenAll(
+                LoadCompanies(),
+                LoadCompaniesCount(),
+                LoadServersWithCompaniesCount(),
+                LoadUsers(),
+                LoadCompanyUsers(),
+                LoadServerAddress()
+            );
+
+            // Uncomment these if you want to load them initially
+
+
+            await ConnectToCompanyHub();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error during initialization: {ex.Message}");
+        }
+        finally
+        {
+            _customLoader = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_companyHub != null)
+        {
+            try
+            {
+                await _companyHub.StopAsync();
+                await _companyHub.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error disposing SignalR hub: {ex.Message}");
+            }
+        }
+    }
+
+    #endregion
+} *@

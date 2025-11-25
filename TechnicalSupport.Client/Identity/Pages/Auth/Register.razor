@@ -1,0 +1,228 @@
+﻿@page "/auth/register"
+
+@layout CentralCardLayout
+
+<PageTitle>Register</PageTitle>
+
+<RadzenCard>
+
+	<RadzenRow JustifyContent="JustifyContent.Center">
+		<RadzenLabel Text="@MyText.registerForm" />
+	</RadzenRow>
+
+	<RadzenTemplateForm TItem="RegisterUserRequest" Data=@_userRegistration Submit="@RegisterUser">
+		<RadzenStack>
+
+			@if (_isRegisterError)
+			{
+				<MyAlertError Errors="_errors" />
+			}
+
+			@if (!string.IsNullOrEmpty(_imgDataUrl))
+			{
+				<img src="@_imgDataUrl " alt="Profile Picture" style="max-width: 200px; max-height: 200px;" />
+			}
+
+			<RadzenFormField Text="@MyText.firstName">
+				<RadzenTextBox @bind-Value="_userRegistration.FirstName"
+							   Name="@nameof(RegisterUserRequest.FirstName)"
+							   AutoCompleteType="AutoCompleteType.Off"
+							   MaxLength="25"
+							   @ref="_txtFocus"
+							   Style="width: 100%" />
+			</RadzenFormField>
+			<RadzenRequiredValidator Component="@nameof(RegisterUserRequest.FirstName)" Text="@MyText.requiredField" />
+
+			<RadzenFormField Text="@MyText.lastName">
+				<RadzenTextBox @bind-Value="_userRegistration.LastName"
+							   Name="@nameof(RegisterUserRequest.LastName)"
+							   AutoCompleteType="AutoCompleteType.Off"
+							   MaxLength="25" />
+			</RadzenFormField>
+			<RadzenRequiredValidator Component="@nameof(RegisterUserRequest.LastName)" Text="@MyText.requiredField" />
+
+			<RadzenFormField Text="@MyText.username">
+				<RadzenTextBox @bind-Value="_userRegistration.UserName"
+							   Name="@nameof(RegisterUserRequest.UserName)"
+							   AutoCompleteType="AutoCompleteType.Off"
+							   MaxLength="25" />
+			</RadzenFormField>
+			<RadzenRequiredValidator Component="@nameof(RegisterUserRequest.UserName)" Text="@MyText.requiredField" />
+
+			<RadzenFormField Text="@MyText.email">
+				<RadzenTextBox @bind-Value="_userRegistration.Email"
+							   Name="@nameof(RegisterUserRequest.Email)"
+							   AutoCompleteType="AutoCompleteType.Off"
+							   MaxLength="50" />
+			</RadzenFormField>
+			<RadzenRequiredValidator Component="@nameof(RegisterUserRequest.Email)" Text="@MyText.requiredField" />
+			<RadzenEmailValidator Component="@nameof(RegisterUserRequest.Email)" Text="@MyText.invalidEmailFormat" />
+
+			<RadzenFormField Text="@MyText.password">
+				<RadzenTextBox @bind-Value="_userRegistration.Password"
+							   Name="@nameof(RegisterUserRequest.Password)"
+							   AutoCompleteType="AutoCompleteType.Off"
+							   MaxLength="25" />
+			</RadzenFormField>
+			<RadzenRequiredValidator Component="@nameof(RegisterUserRequest.Password)" Text="@MyText.requiredField" />
+			<RadzenLengthValidator Component="@nameof(RegisterUserRequest.Password)" Text="@MyText.passwordLength" Min="8" />
+			<RadzenRegexValidator Component="@nameof(RegisterUserRequest.Password)" Text="@MyText.passwordPattern" Pattern="@RegexPatterns.Password" />
+
+			<RadzenFormField Text="@MyText.confirmPassword">
+				<RadzenTextBox @bind-Value="_userRegistration.ConfirmPassword"
+							   Name="@nameof(RegisterUserRequest.ConfirmPassword)"
+							   AutoCompleteType="AutoCompleteType.Off"
+							   MaxLength="25" />
+			</RadzenFormField>
+			<RadzenRequiredValidator Component="@nameof(RegisterUserRequest.ConfirmPassword)" Text="@MyText.requiredField" />
+			<RadzenLengthValidator Component="@nameof(RegisterUserRequest.ConfirmPassword)" Text="@MyText.passwordLength" Min="8" />
+			<RadzenRegexValidator Component="@nameof(RegisterUserRequest.ConfirmPassword)" Text="@MyText.passwordPattern" Pattern="@RegexPatterns.Password" />
+
+			<RadzenUpload Accept="image/*" Multiple="false" MaxFileCount="1" Change="HandleFileChange" />
+
+			<RadzenStack>
+				<RadzenButton ButtonType="ButtonType.Submit"
+							  Icon="@GoogleIcons.Register"
+							  Text="@MyText.save"
+							  IsBusy="@_isBusy"
+							  BusyText="@MyText.submitting" />
+			</RadzenStack>
+
+		</RadzenStack>
+	</RadzenTemplateForm>
+</RadzenCard>
+
+<Notification @ref="_notificationRef" />
+
+@code {
+
+	#region Parameters
+
+	[SupplyParameterFromQuery]
+	private string? ReturnUrl { get; set; }
+
+	#endregion
+
+	#region Injects
+
+	[Inject]
+	public IAuthenticationServiceFactory _authenticationService { get; set; }
+
+	#endregion
+
+	#region Variables
+
+	I18nText.MyText MyText = new I18nText.MyText();
+
+	private RegisterUserRequest _userRegistration = new();
+
+	private bool _isRegisterError { get; set; }
+
+	private List<string> _errors = new();
+
+	private string? _imgDataUrl { get; set; }
+
+	private IBrowserFile? _selectedFile;
+
+	private bool _isBusy;
+
+	private Notification _notificationRef;
+
+	private RadzenTextBox _txtFocus;
+
+	#endregion
+
+	#region LifeCycleMethods
+
+	protected override async Task OnInitializedAsync() => MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		if (firstRender)
+			await _txtFocus.FocusAsync();
+	}
+
+
+	#endregion
+
+	#region Methods
+
+	public void RedirectTo(string? uri)
+	{
+		uri ??= "";
+
+		// Prevent open redirects.
+		if (!Uri.IsWellFormedUriString(uri, UriKind.Relative))
+		{
+			uri = NavManager!.ToBaseRelativePath(uri);
+		}
+
+		NavManager!.NavigateTo(uri);
+	}
+
+	public void RedirectTo(string uri, Dictionary<string, object?> queryParameters)
+	{
+		var uriWithoutQuery = NavManager!.ToAbsoluteUri(uri).GetLeftPart(UriPartial.Path);
+		var newUri = NavManager.GetUriWithQueryParameters(uriWithoutQuery, queryParameters);
+		RedirectTo(newUri);
+	}
+
+	public async Task RegisterUser()
+	{
+		try
+		{
+			_isBusy = true;
+			_isRegisterError = false;
+			var result = await _authenticationService.RegisterUser(_userRegistration, InternalRoutes.EmailConfirmation);
+			if (!result.Success)
+			{
+				_errors = [];
+				_isRegisterError = true;
+				var errorMessages = result.ErrorResponse.Errors.Values.SelectMany(list => list);
+				_errors.AddRange(errorMessages);
+				_isBusy = false;
+			}
+			else
+			{
+				await Task.Delay(500);
+				NavManager.NavigateTo(InternalRoutes.Confirmemail);
+				_isBusy = false;
+			}
+		}
+		catch (Exception)
+		{
+			_notificationRef.ShowNotifications(MyText.loginFailed, MyText.checkInternetConnection, NotificationSeverity.Error);
+			_isBusy = false;
+		}
+	}
+
+	private async Task HandleFileChange(UploadChangeEventArgs args)
+	{
+		if (args.Files.Any())
+		{
+			var file = args.Files.FirstOrDefault();
+			if (file != null)
+			{
+				_selectedFile = file;
+				using var stream = new MemoryStream();
+				await _selectedFile.OpenReadStream().CopyToAsync(stream);
+				_userRegistration.ProfilePicture = stream.ToArray();
+
+				_imgDataUrl = $"data:image/*;base64,{Convert.ToBase64String(_userRegistration.ProfilePicture)}";
+			}
+		}
+		else
+		{
+			// File removed
+			_imgDataUrl = string.Empty;
+			_userRegistration.ProfilePicture = null;
+			_selectedFile = null;
+		}
+
+		this.StateHasChanged(); // Update the UI
+	}
+
+	#endregion
+}
+
+

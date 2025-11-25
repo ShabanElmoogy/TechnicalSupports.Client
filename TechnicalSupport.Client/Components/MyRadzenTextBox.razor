@@ -1,0 +1,26 @@
+﻿<RadzenTextBox Placeholder="@($"{MyText.search} ...")"
+               Value="SearchText"
+               ValueChanged="OnSearchTextChanged"
+               Style="width:100%" />
+
+@code {
+    private I18nText.MyText MyText = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+    }
+
+    [Parameter]
+    public string SearchText { get; set; }
+
+    [Parameter]
+    public EventCallback<string> SearchTextChanged { get; set; }
+
+    private async Task OnSearchTextChanged(string newValue)
+    {
+        SearchText = newValue;
+        await SearchTextChanged.InvokeAsync(newValue);
+    }
+}
+

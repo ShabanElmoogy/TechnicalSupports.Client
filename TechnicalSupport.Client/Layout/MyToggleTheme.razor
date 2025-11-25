@@ -1,0 +1,19 @@
+﻿<RadzenButton Click="@ToggleTheme" Size="ButtonSize.Small" Style="height:2rem">
+    @if (CurrentTheme == "Light")
+    {
+        <RadzenIcon Icon="@GoogleIcons.DarkMode" />
+    }
+    else
+    {
+        <RadzenIcon Icon="@GoogleIcons.LightMode" />
+    }
+</RadzenButton>
+
+@code{
+    [Parameter] 
+    public string CurrentTheme { get; set; }
+
+    [Parameter]
+    public EventCallback ToggleTheme { get; set; }
+
+}

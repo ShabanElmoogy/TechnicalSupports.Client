@@ -1,0 +1,24 @@
+﻿<div style="position: relative; width: 100%;">
+    @TextBox
+
+    <button type="button"
+            hidden="@Visible"
+            style="position: absolute; @(AppCulture == Strings.ar ? "left" : "right"): 5px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer;"
+            @onclick="@ClearTextBox">
+        ✕
+    </button>
+</div>
+
+@code {
+    [Parameter]
+    public EventCallback ClearTextBox { get; set; }
+
+    [Parameter]
+    public bool Visible { get; set; }
+
+    [Parameter]
+    public RenderFragment? TextBox { get; set; }
+
+    [CascadingParameter(Name = Strings.CurrentCulture)]
+    public string? AppCulture { get; set; }
+}

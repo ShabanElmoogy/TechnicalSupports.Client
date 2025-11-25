@@ -1,0 +1,472 @@
+﻿@page "/roles"
+
+@implements IAsyncDisposable
+@attribute [MustHavePermission(Permissions.ViewRoles)]
+
+<MyMenuBar AddNew="AddRole"
+           ButtonText="@MyText.addRole"
+           ExportGrid="ExportGrid"
+           IsGridView="@_isCardView"
+           ToggleView="@ToggleView"
+           SelectedDeleteFilter="@_selectedDeleteFilter"
+           OnDeleteFilterChange="@OnDeleteFilterChange" />
+
+@if (_customLoader)
+{
+    <MyLoader2 LoaderText="@_loaderText" />
+}
+
+@if (_isLoading)
+{
+    <MyLoader />
+}
+else
+{
+    @if (!_isCardView)
+    {
+        <MyGrid GridSource="_roles"
+                SelectedItems="_selectedRole"
+                TItem="RoleViewModel"
+                OnGridInitialized="SetGridReference"
+                @ref="_grid"
+                OnEditItem="(e) => EditRole(e)"
+                OnDeleteItem="(e) => DeleteRole(e)"
+                DeletePermission="_canDelete"
+                GridSettingsName="RolesGridSettings">
+
+            <GridColumns>
+
+                <MyGridColumn TItem="RoleViewModel"
+                              ColumnName="@(nameof(RoleViewModel.Name))"
+                              TextName="@MyText.name" />
+
+                <MyToggledColumn TItem="RoleViewModel"
+                                 ColumnName="@(nameof(RoleViewModel.IsDeleted))"
+                                 Width="100px"
+                                 Condition="@(c => c.IsDeleted)" />
+
+            </GridColumns>
+
+            <ActionButtons Context="item">
+                <RadzenButton ButtonStyle="ButtonStyle.Light"
+                              Icon="@GoogleIcons.Key"
+                              IconColor="@Colors.InfoDark"
+                              Variant="Variant.Flat"
+                              Size="ButtonSize.Medium"
+                              Click="@(async () => ManagePermissions(item))"
+                              class="mx-1"
+                              @onclick:stopPropagation="true" />
+            </ActionButtons>
+
+        </MyGrid>
+    }
+    else
+    {
+        <MyMenuBarForCardView Columns="@_columns"
+                              SelectedColumn="@_selectedColumn"
+                              OnSearchTextChanged="@OnSearchChange"
+                              OnSelectedColumnChanged="@SelectedColumnChanged"
+                              OnSelectedSearchTypeChanged="@SelectedSearchTypeChanged"
+                              OnSearch="@SearchRolesStatus">
+        </MyMenuBarForCardView>
+
+        <MyCardViewPaging TItem="RoleViewModel"
+                          Items="_roles"
+                          GetName="@(role => role.Name)"
+                          IsDeleted="role => role.IsDeleted"
+                          EditItem="EditRole"
+                          DeleteItem="DeleteRole"
+                          DeletePermission="_canDelete">
+
+            <CardBody Context="role">
+                <MyCardLabel Label="@MyText.id" Content="@role.Id" />
+            </CardBody>
+        </MyCardViewPaging>
+    }
+
+    <Notification @ref="_notificationRef" />
+}
+
+@code {
+
+    #region "CascadingParameters"
+
+    [CascadingParameter(Name = Strings.CurrentCulture)]
+    public string AppCulture { get; set; }
+
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthState { get; set; }
+
+    #endregion
+
+    #region "Injects"
+
+    [Inject]
+    private IMainService<RoleViewModel>? _roleService { get; set; }
+
+    [Inject]
+    protected IAuthorizationService _authService { get; set; } = default!;
+
+    #endregion
+
+    #region "Variables"
+
+    private I18nText.MyText MyText = new();
+
+    private Notification _notificationRef;
+
+    private HotKeysContext? _hotKeysContext;
+
+    private bool _isLoading;
+
+    private bool _isCardView;
+
+    private RadzenDataGrid<RoleViewModel> _grid;
+
+    private RoleViewModel _role = new();
+
+    private RoleViewModel? EditedRole { get; set; }
+
+    private List<RoleViewModel> _roles = new();
+
+    private List<RoleViewModel> _originalRoles = new();
+
+    private List<RoleViewModel> _selectedRole = new();
+
+    private DialogOptions _options = new Radzen.DialogOptions() { Width = "500px", Height = "270px", ShowClose = false };
+
+    private string _searchText = string.Empty;
+
+    private string _selectedColumn = string.Empty;
+
+    private string _selectedSearchType = string.Empty;
+
+    private string _selectedDeleteFilter = Strings.Active;
+
+    private List<DropDownItem> _columns = new();
+
+    private List<DropDownItem> _searchTypes = new();
+
+    private bool _customLoader;
+    private string _loaderText = string.Empty;
+
+    private bool _canView;
+    private bool _canCreate;
+    private bool _canEdit;
+    private bool _canDelete;
+
+    #endregion
+
+    #region "LifeCycle Methods"
+
+    protected override async Task OnInitializedAsync() => await InitializeComponentData();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadLocalizedText();
+        InitializeSearchColumn();
+        await ViewSate();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            _hotKeysContext = this.HotKeys.CreateContext().Add(Code.F4, AddRole);
+    }
+
+    private async Task InitializeComponentData()
+    {
+        _isLoading = true;
+
+        await LoadLocalizedText();
+        await LoadPermissions();
+        await LoadRoles();
+        SearchRolesStatus();
+
+        _isLoading = false;
+    }
+
+    private async Task LoadPermissions()
+    {
+        var user = (await AuthState).User;
+
+        _canView = await _authService.HasPermissionAsync(user, Permissions.ViewRoles);
+        _canCreate = await _authService.HasPermissionAsync(user, Permissions.CreateRoles);
+        _canEdit = await _authService.HasPermissionAsync(user, Permissions.EditRoles);
+        _canDelete = await _authService.HasPermissionAsync(user, Permissions.DeleteRoles);
+    }
+
+    private async Task ViewSate() => _isCardView = await storageService.GetItemAsync<bool>(Strings.RoleCardView);
+
+    private async Task LoadLocalizedText() => MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+
+    private void InitializeSearchColumn()
+    {
+        _columns = new List<DropDownItem>
+        {
+            new DropDownItem { Text = AppCulture == Strings.ar ? Strings.NameArabic : Strings.NameEnglish, Value = Strings.Name }
+        };
+
+        if (string.IsNullOrEmpty(_selectedColumn) || !_columns.Any(c => c.Value == _selectedColumn))
+        {
+            _selectedColumn = _columns.FirstOrDefault()?.Value ?? string.Empty;
+        }
+
+        StateHasChanged();
+    }
+
+    #endregion
+
+    #region "Events"
+
+    private void SetGridReference(RadzenDataGrid<RoleViewModel> gridReference) => _grid = gridReference;  //Important For Export Grid
+
+    private void OnSearchChange(string newValue) => _searchText = newValue;
+
+    private void SelectedColumnChanged(string newValue) => _selectedColumn = newValue;
+
+    private void SelectedSearchTypeChanged(string newValue) => _selectedSearchType = newValue;
+
+    private void OnDeleteFilterChange(object value)
+    {
+        _selectedDeleteFilter = value.ToString();
+        SearchRolesStatus(); // Reapply the filter whenever the delete filter changes
+    }
+
+    #endregion
+
+    #region "CrudOperations"
+
+    private async Task LoadRoles()
+    {
+        var result = await _roleService!.GetAll($"{ApiRoutes.v1}/{ApiRoutes.Roles.GetAllRoles}");
+        _roles = result ?? new List<RoleViewModel>();
+
+        _originalRoles = new List<RoleViewModel>(_roles);
+        _selectedRole = new List<RoleViewModel> { _roles?.LastOrDefault() };
+    }
+
+    private async Task AddRole()
+    {
+        var parameters = new Dictionary<string, object>
+                             {
+                                { Strings.OnError, EventCallback.Factory.Create<List<string>>(this, HandleError) },
+                                { Strings.OnSuccess, EventCallback.Factory.Create(this, () => HandleSuccess(false)) }
+                             };
+
+        var result = await dialogService.OpenAsync<RoleForm>(MyText.addRole, parameters, _options);
+    }
+
+    private async Task EditRole(RoleViewModel role)
+    {
+        var parameters = new Dictionary<string, object>
+            {
+                { Strings.OnError, EventCallback.Factory.Create<List<string>>(this, HandleError) },
+                { Strings.OnSuccess, EventCallback.Factory.Create(this, () => HandleSuccess(true, role)) },
+                { Strings.EditedRole, role }
+            };
+
+        await dialogService.OpenAsync<RoleForm>(MyText.editRole, parameters, _options);
+    }
+
+    private void ManagePermissions(RoleViewModel role) => NavManager.NavigateTo($"{InternalRoutes.ManageRoleClaims}/{role.Id}");
+
+    private void HandleError(List<string> errors)
+    {
+        foreach (var error in errors)
+            _notificationRef.ShowNotifications(error, Strings.Error, NotificationSeverity.Error);
+    }
+
+    private async Task HandleSuccess(bool isEdit, RoleViewModel editedRole = null)
+    {
+        await LoadRoles();
+        SearchRolesStatus();
+
+        if (isEdit && editedRole != null)
+        {
+            isEdit = false;
+
+            _selectedRole = new List<RoleViewModel> { _roles.FirstOrDefault(c => c.Id == editedRole.Id) };
+            StateHasChanged();
+
+            if (!_isCardView)
+                await radzenGridFunction.GoToPageByAsync(_roles, editedRole, _grid, (c1, c2) => c1.Id == c2.Id);
+
+            _notificationRef.ShowNotifications(MyText.notificationEditSummary, $"{MyText.notificationEditDetail} {editedRole.Name} {MyText.successEdit}");
+        }
+        else
+        {
+            var lastRole = _roles?.LastOrDefault();
+            if (lastRole != null)
+            {
+                _selectedRole = new List<RoleViewModel>
+            { lastRole };
+                StateHasChanged();
+
+                if (!_isCardView)
+                    await radzenGridFunction.GoToPageByAsync(_roles, lastRole, _grid, (c1, c2) => c1.Id == c2.Id);
+
+                _notificationRef.ShowNotifications(MyText.notificationSaveSummary, $"{MyText.notificationSaveDetail} {lastRole.Name} {MyText.successSave}");
+            }
+        }
+    }
+
+    #region "Delete Methods"
+
+    private async Task DeleteRole(RoleViewModel role)
+    {
+        _customLoader = !_isCardView;
+        _loaderText = MyText.executing;
+
+        var roleName = role.Name;
+        var currentIndex = _roles.FindIndex(r => r.Id == role.Id);
+
+        try
+        {
+            bool? confirmation = await dialogService.Confirm($"{MyText.confirmDelete} {roleName} ?", MyText.deleteRole);
+            if (confirmation == true)
+            {
+                var response = await _roleService!.UpdateRow(null, $"{ApiRoutes.v1}/{ApiRoutes.Roles.ToggleRole}/{role.Id}");
+                if (response.Success)
+                {
+                    await HandleSuccessfulRoleDeletion(currentIndex, roleName);
+                }
+                else
+                {
+                    var errorMessages = response.ErrorResponse.Errors.Values.SelectMany(list => list).ToList();
+                    _notificationRef.ShowNotifications(MyText.error, string.Join(Environment.NewLine, errorMessages), NotificationSeverity.Error, 5000);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _notificationRef.ShowNotifications(MyText.error, $"{MyText.deletionFailed}: {ex.Message}");
+        }
+        finally
+        {
+            _customLoader = false;
+        }
+    }
+
+    private async Task HandleSuccessfulRoleDeletion(int currentIndex, string roleName)
+    {
+        await LoadRoles();
+        SearchRolesStatus();
+
+        if (!_isCardView)
+            await UpdateGridAfterRoleDeletion(currentIndex);
+
+        _notificationRef.ShowNotifications(MyText.deletedSuccessfully, $"{roleName} {MyText.deletedSuccessfully}");
+    }
+
+    private async Task UpdateGridAfterRoleDeletion(int currentIndex)
+    {
+        if (!_isCardView)
+        {
+            var targetRole = GetTargetRoleAfterDeletion(currentIndex);
+
+            if (targetRole != null)
+            {
+                _selectedRole = new List<RoleViewModel>
+                { targetRole };
+                await _grid.Reload();
+                await radzenGridFunction.GoToPageByAsync(_roles, targetRole, _grid, (r1, r2) => r1.Id == r2.Id);
+            }
+        }
+    }
+
+    private RoleViewModel? GetTargetRoleAfterDeletion(int currentIndex)
+    {
+        return currentIndex > 0
+        ? _roles.ElementAtOrDefault(currentIndex - 1) // Previous row
+        : _roles.FirstOrDefault(); // First row
+    }
+
+    #endregion
+
+    #endregion
+
+    #region "Helper Methods"
+
+    private void ToggleView()
+    {
+        _isCardView = !_isCardView;
+        storageService.SetItemAsync(Strings.RoleCardView, _isCardView);
+    }
+
+    private void SearchRolesStatus()
+    {
+        _roles = GlobalFunctions.SearchEntitiesStatus(
+                                _originalRoles,
+                                _searchText,
+                                _selectedColumn,
+                                _selectedSearchType,
+                                _selectedDeleteFilter,
+                                c => c.IsDeleted
+        );
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hotKeysContext != null)
+            await _hotKeysContext.DisposeAsync();
+    }
+
+    #endregion
+
+    #region "Export Methods"
+
+    private async Task ExportGrid(ExportType exportType)
+    {
+        _customLoader = true;
+        _loaderText = MyText.executing;
+
+        if (_roles != null && _roles.Any())
+        {
+            List<RolesExportModel>
+                exportData = new();
+            List<Dictionary<string, object>> formattedExportData = new();
+
+            Dictionary<string, string> columnTitles = new Dictionary<string, string>
+                                {
+                                    { nameof(RoleViewModel.Id), MyText.id },
+                                    { nameof(RoleViewModel.Name), MyText.name }
+                                };
+
+            if (!_isCardView)
+            {
+                var pickedColumns = _grid.ColumnsCollection
+                                        .Where(c => c.Pickable && c.Visible)
+                                        .Select(c => c.Property);
+
+                if (!string.IsNullOrEmpty(_grid.Query.Filter))
+                {
+                    var query = _grid.Query.Filter;
+                    var filteredRoles = _roles.AsQueryable().Where(query).ToList();
+
+                    exportData = mapper.Map<List<RolesExportModel>>(filteredRoles).ToList();
+                }
+                else
+                {
+                    exportData = mapper.Map<List<RolesExportModel>>(_roles).ToList();
+                }
+
+                formattedExportData = exportHelper.ConvertToDictionary(exportData, columnTitles, null);
+            }
+            else
+            {
+                exportData = mapper.Map<List<RolesExportModel>>(_roles).ToList();
+                formattedExportData = exportHelper.ConvertToDictionary(exportData, columnTitles, null);
+            }
+
+            await exportListService.ExportAsync(exportType, formattedExportData, Strings.Roles, MyText.pdfRolesTitle,AppCulture);
+        }
+        _customLoader = false;
+    }
+
+    #endregion
+}
+
+
+
+

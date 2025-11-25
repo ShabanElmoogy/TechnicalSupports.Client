@@ -1,0 +1,27 @@
+﻿@page "/auth/emailConfirmation"
+
+@code {
+    [SupplyParameterFromQuery]
+    public string? userId { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? code { get; set; }
+
+    [Inject]
+    public IAuthenticationServiceFactory? _authenticationService { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var request = new ConfirmEmailRequest
+            {
+                userId = userId,
+                code = code
+            };
+        var result = await _authenticationService!.ConfirmEmail(request);
+        if (result.Success)
+        {
+            NavManager!.NavigateTo(InternalRoutes.Login);
+        }
+    }
+}
+

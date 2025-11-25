@@ -1,0 +1,63 @@
+﻿@typeparam TItem
+
+<RadzenDataGridColumn TItem="TItem" 
+                      Width="@Width" 
+                      Property="@ColumnName" 
+                      Title="@MyText.status" 
+                      TextAlign="Radzen.TextAlign.Center"
+                      OrderIndex="999">
+    <HeaderTemplate>
+        <div class="grid-title">
+            @MyText.status
+        </div>
+    </HeaderTemplate>
+    <Template Context="item">
+        <RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center">
+            @if (!Condition(item))
+            {
+                <RadzenIcon Icon="@IconActive" IconStyle="IconStyle.Success" />
+            }
+            else
+            {
+                <RadzenIcon Icon="@IconInActive" IconStyle="IconStyle.Danger" />
+            }
+        </RadzenStack>
+    </Template>
+</RadzenDataGridColumn>
+
+@code {
+
+    #region Variables
+
+    private I18nText.MyText MyText = new();
+
+    #endregion
+
+    #region LifeCycleMethods
+
+    protected async override Task OnInitializedAsync() => MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+
+    #endregion
+
+    #region Parameters
+
+    [Parameter]
+    public string? ColumnName { get; set; }
+
+    [Parameter]
+    public Func<TItem, bool> Condition { get; set; }
+
+    [Parameter]
+    public string? HeaderText { get; set; }
+
+    [Parameter]
+    public string Width { get; set; } = "35px";
+
+    [Parameter]
+    public string IconActive { get; set; } = GoogleIcons.IconActive;
+
+    [Parameter]
+    public string IconInActive { get; set; } = GoogleIcons.Close;
+
+    #endregion
+}

@@ -1,0 +1,55 @@
+﻿@using TechnicalSupport.Client.ViewModels.Dashboard
+
+<RadzenRow>
+    <RadzenColumn SizeLG="6" Style="width: 100%;">
+        <RadzenCard Style="margin-bottom:10px">
+            <RadzenStack Style="width: 100%;">
+                <RadzenChart>
+                    <RadzenDonutSeries Data="@CompaniesWithUserCounts"
+                                       TItem="CompanyWithUserCount"
+                                       CategoryProperty="CompanyName"
+                                       ValueProperty="CompanyUserCount"
+                                       TotalAngle="180"
+                                       StartAngle="180">
+                        <ChildContent>
+                            <RadzenSeriesDataLabels Visible="true" />
+                        </ChildContent>
+                    </RadzenDonutSeries>
+                </RadzenChart>
+                <RadzenText Text="@MyText.companyUsersCountInCompanies" TextAlign="TextAlign.Center" TextStyle="TextStyle.DisplayH6"></RadzenText>
+            </RadzenStack>
+        </RadzenCard>
+    </RadzenColumn>
+
+    <RadzenColumn SizeLG="6" Style="width: 100%;">
+        <RadzenCard Style="margin-bottom:10px">
+            <RadzenStack Style="width: 100%;">
+                <RadzenChart>
+                    <RadzenPieSeries Data="@ServersWithCompaniesCount"
+                                     TItem="ServersWithCompanyCount"
+                                     Title="Servers"
+                                     CategoryProperty="ServerName"
+                                     ValueProperty="CompanyCount">
+                        <RadzenSeriesDataLabels Visible="true" />
+                    </RadzenPieSeries>
+                </RadzenChart>
+                <RadzenText Text="@MyText.companyCountInServers" TextAlign="TextAlign.Center" TextStyle="TextStyle.DisplayH6"></RadzenText>
+            </RadzenStack>
+        </RadzenCard>
+    </RadzenColumn>
+</RadzenRow>
+
+@code {
+    [Parameter] public List<CompanyWithUserCount> CompaniesWithUserCounts { get; set; } = [];
+    [Parameter] public List<ServersWithCompanyCount> ServersWithCompaniesCount { get; set; } = [];
+
+    [CascadingParameter(Name = Strings.CurrentCulture)]
+    public string? AppCulture { get; set; }
+
+    private I18nText.MyText MyText = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+    }
+}

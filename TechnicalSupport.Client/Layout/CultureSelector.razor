@@ -1,0 +1,108 @@
+﻿<RadzenDropDown @bind-Value="CurrentLang"
+                Data="@languages"
+                TextProperty="Text"
+                ValueProperty="Value"
+                Change="OnLanguageChange"
+                class="culture-dropdown mx-2" />
+
+@code {
+
+    #region Variables
+
+    private I18nText.MyText MyText = new();
+
+    private string? CurrentLang;
+
+    private string? LayoutDirection;
+
+    private List<Language> languages = new()
+    {
+        new Language { Text = Strings.English, Value = Strings.en },
+        new Language { Text =  Strings.Arabic, Value = Strings.ar }
+    };
+
+    private class Language
+    {
+        public string? Text { get; set; }
+        public string? Value { get; set; }
+    }
+
+    private async Task SetDirection()
+    {
+        bool isRtl = LayoutDirection == Strings.rtl;
+        string jsMethod = isRtl ? JsFunctions.SetRTLAndLoadRTLBootstrap : JsFunctions.SetLTRAndLoadLTRBootstrap;
+        await jsRuntime.InvokeVoidAsync(jsMethod);
+    }
+
+    #endregion
+
+    #region LifeCycleMethods
+
+    protected override async Task OnInitializedAsync()
+    {
+        CurrentLang = await GetPreferredLanguageAsync();
+        //LayoutDirection = await localStorage.GetItemAsync<string>(Strings.LayoutDirection) ?? Strings.ltr;
+        LayoutDirection = CurrentLang == Strings.ar ? "rtl" : "ltr";
+        await SetDirection();
+        await InitializeLanguageSettings();
+    }
+
+    protected override async Task OnParametersSetAsync() => await UpdateLanguageAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await SetDirection();
+    }
+
+    #endregion
+
+    #region Methods
+
+    private async Task OnLanguageChange(object value)
+    {
+        if (value is string lang)
+        {
+            CurrentLang = lang;
+
+            await UpdateLanguageAsync();
+            LayoutDirection = CurrentLang == Strings.ar ? Strings.rtl : Strings.ltr;
+            await localStorage.SetItemAsync(Strings.LayoutDirection, LayoutDirection);
+            await SetDirection();
+            CreateCookie(Strings.ClientCulture, CurrentLang, 3);
+            StateHasChanged();
+        }
+    }
+
+    private async Task<string> GetPreferredLanguageAsync()
+    {
+        var cookieLang = await jsRuntime.InvokeAsync<string>(JsFunctions.GetCookie, Strings.ClientCulture);
+        if (!string.IsNullOrEmpty(cookieLang))
+        {
+            return cookieLang;
+        }
+
+        var browserLang = await jsRuntime.InvokeAsync<string>(JsFunctions.GetBrowserLanguage);
+        return browserLang?.Split('-')[0] ?? Strings.en;
+    }
+
+    private async Task InitializeLanguageSettings()
+    {
+        await storageService.SetItemAsync(Strings.I18nextLng, CurrentLang);
+        await UpdateLanguageAsync();
+    }
+
+    private async Task UpdateLanguageAsync()
+    {
+        CultureService.SetCurrentCulture(CurrentLang);
+        await I18nText.SetCurrentLanguageAsync(CurrentLang);
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+    }
+
+    private async void CreateCookie(string name, string value, int days)
+    {
+        await jsRuntime.InvokeAsync<string>(JsFunctions.CreateCookie, name, value, days);
+    }
+
+    #endregion
+}

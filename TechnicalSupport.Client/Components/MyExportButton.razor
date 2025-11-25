@@ -1,0 +1,19 @@
+﻿<RadzenColumn SizeXS="12" SizeMD="2">
+    <RadzenMenu class="rz-border-radius-1">
+        <RadzenMenuItem Text="@MyText.export" Icon="@GoogleIcons.ExportNotes" IconColor="@Radzen.Colors.White">
+            <RadzenMenuItem Text="@MyText.exportExcel" Click="() => OnExport.InvokeAsync(ExportType.Excel)" />
+            <RadzenMenuItem Text="@MyText.exportCsv" Click="() => OnExport.InvokeAsync(ExportType.Csv)" />
+            <RadzenMenuItem Text="@MyText.exportPdf" Click="() => OnExport.InvokeAsync(ExportType.Pdf)" />
+        </RadzenMenuItem>
+    </RadzenMenu>
+</RadzenColumn>
+
+@code {
+
+    [Parameter]
+    public EventCallback<ExportType> OnExport { get; set; }
+
+    protected async override Task OnInitializedAsync() => MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+
+    private I18nText.MyText MyText = new();
+}

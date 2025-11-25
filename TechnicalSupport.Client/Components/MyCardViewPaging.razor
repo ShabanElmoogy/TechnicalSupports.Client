@@ -1,0 +1,185 @@
+﻿@typeparam TItem
+
+<Animate Animation="Animations.FlipRight"
+         Easing="Easings.EaseInBack"
+         Duration="TimeSpan.FromSeconds(0.5)"
+         Delay="TimeSpan.FromSeconds(0.5)">
+
+    <RadzenRow id="card">
+        @foreach (var item in PaginatedItems)
+        {
+            <RadzenColumn SizeXS="12" SizeSM="6">
+                <RadzenCard class="rz-shadow-2 rz-border-radius-2 rz-mb-3"
+                            style="@(OnCardClick.HasDelegate ? Strings.CursorPointer : Strings.CursorDefault)">
+
+                    <RadzenPanel class="fw-bold fs-6 rz-background-color-base-200 rz-color-black mb-3">
+                        <RadzenRow JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+                            <RadzenIcon Icon="@(IsDeleted(item) ? GoogleIcons.Close : GoogleIcons.CheckCircle)"
+                                        IconStyle="@(IsDeleted(item) ? IconStyle.Danger : IconStyle.Success)"
+                                        Style="font-size: 24px;" />
+                            <RadzenRow>
+                                <span class="fw-bold fs-5">@GetName(item)</span>
+                            </RadzenRow>
+                        </RadzenRow>
+                    </RadzenPanel>
+
+                    <RadzenStack>
+                        @CardBody(item)
+
+                        <RadzenRow JustifyContent="JustifyContent.End">
+                            <RadzenButton Icon="@GoogleIcons.Edit"
+                                          IconColor="@Radzen.Colors.Primary"
+                                          ButtonStyle="ButtonStyle.Light"
+                                          Variant="Variant.Flat"
+                                          Size="ButtonSize.Medium"
+                                          Click="@(() => EditItem.InvokeAsync(item))"
+                                          @onclick:stopPropagation="true" />
+
+                            @if (DeletePermission)
+                            {
+                                <RadzenButton Icon="@GoogleIcons.Delete"
+                                              IconColor="@Radzen.Colors.Danger"
+                                              ButtonStyle="ButtonStyle.Light"
+                                              Variant="Variant.Flat"
+                                              Size="ButtonSize.Medium"
+                                              Click="@(() => DeleteItemAsync(item))"
+                                              @onclick:stopPropagation="true" />
+                            }
+
+                            <RadzenButton ButtonStyle="ButtonStyle.Light"
+                                          Icon="@GoogleIcons.Group"
+                                          IconColor="@Colors.InfoDark"
+                                          Variant="Variant.Flat"
+                                          Size="ButtonSize.Medium"
+                                          Click="@(() => OnCardClick.InvokeAsync(item))"
+                                          class="mx-1"
+                                          @onclick:stopPropagation="true" />
+                        </RadzenRow>
+                    </RadzenStack>
+                </RadzenCard>
+            </RadzenColumn>
+        }
+    </RadzenRow>
+
+    <RadzenRow AlignItems="AlignItems.Center">
+        <RadzenColumn Size="10">
+            <RadzenPager Count="@count"
+                         PageSize="@pageSize"
+                         PageNumbersCount="10"
+                         PageChanged="@OnPageChanged" />
+        </RadzenColumn>
+        <RadzenColumn Size="2">
+            <RadzenDropDown Style="width: 100%;"
+                            Visible="@(count > 4)"
+                            TValue="int"
+                            Data="new List<int> { 4, 6, 8, 10 }"
+                            @bind-Value="@pageSize"
+                            Change="@(args => OnPageSizeChanged((int)args))" />
+        </RadzenColumn>
+    </RadzenRow>
+
+</Animate>
+
+@code {
+
+    [Parameter]
+    public List<TItem> Items { get; set; }
+
+    [Parameter]
+    public string Title { get; set; }
+
+    [Parameter]
+    public RenderFragment<TItem> CardBody { get; set; }
+
+    [Parameter]
+    public Func<TItem, string> GetName { get; set; }
+
+    [Parameter]
+    public Func<TItem, bool> IsDeleted { get; set; }
+
+    [Parameter]
+    public EventCallback<TItem> EditItem { get; set; }
+
+    [Parameter]
+    public EventCallback<TItem> DeleteItem { get; set; }
+
+    [Parameter]
+    public EventCallback<TItem> OnCardClick { get; set; }
+
+    [Parameter]
+    public bool DeletePermission { get; set; }
+
+    // Pagination variables
+    private int pageSize = 4; // Default items per page
+    private int currentPage = 1; // Current page number
+    private int count; // Total item count
+    private IEnumerable<TItem> PaginatedItems => GetPaginatedItems();
+
+    protected override void OnInitialized()
+    {
+        BuildPager();
+    }
+
+    protected override void OnParametersSet()
+    {
+        BuildPager();
+        UpdatePageSize();
+    }
+
+    private void BuildPager()
+    {
+        Items = Items ?? new List<TItem>(); // Initialize Items if null
+        UpdateCount();
+    }
+
+    private void UpdateCount()
+    {
+        count = Items.Count; // Update the item count
+        if (currentPage > GetTotalPages()) // Ensure the current page is valid
+        {
+            currentPage = GetTotalPages();
+        }
+
+        StateHasChanged();
+    }
+
+    private void UpdatePageSize()
+    {
+        if (Items.Count < pageSize && pageSize > 4)
+        {
+            pageSize = Math.Max(4, pageSize / 2); // Adjust to a smaller page size if necessary
+        }
+    }
+
+    private int GetTotalPages()
+    {
+        return (int)Math.Ceiling((double)count / pageSize);
+    }
+
+    private IEnumerable<TItem> GetPaginatedItems()
+    {
+        return Items.Skip((currentPage - 1) * pageSize).Take(pageSize); // Get items for the current page
+    }
+
+    private void OnPageChanged(PagerEventArgs args)
+    {
+        currentPage = args.PageIndex + 1; // Update current page
+        StateHasChanged(); // Trigger UI update
+    }
+
+    private void OnPageSizeChanged(int newSize)
+    {
+        pageSize = newSize;
+        currentPage = 1; // Reset to the first page when page size changes
+        StateHasChanged(); // Trigger UI update
+    }
+
+    private async Task DeleteItemAsync(TItem item)
+    {
+        await DeleteItem.InvokeAsync(item); // Trigger the delete event
+        Items.Remove(item); // Remove the item from the list
+        UpdateCount(); // Update the count and adjust the current page if needed
+        UpdatePageSize();
+        StateHasChanged(); // Trigger UI update
+    }
+}

@@ -1,0 +1,107 @@
+﻿@page "/profile"
+
+<RadzenContent Container="main">
+
+    <ChildContent>
+
+        <RadzenHeading Size="H1" Text="@MyText.profile" />
+
+        <RadzenTabs>
+            <Tabs>
+                <RadzenTabsItem Selected="true" Text="@MyText.personal">
+                    <ChildContent>
+                        <Animate Easing="Easings.EaseInBack"
+                                 Animation="Animations.FadeDown"
+                                 Duration="TimeSpan.FromSeconds(0.5)"
+                                 Delay="TimeSpan.FromSeconds(0.5)">
+                            <Personal User="User" OnUserUpdated="UpdateInfo" />
+                        </Animate>
+                    </ChildContent>
+                </RadzenTabsItem>
+
+                <RadzenTabsItem Text="@MyText.changePassword">
+                    <ChildContent>
+                        <Animate Easing="Easings.EaseInBack"
+                                 Animation="Animations.FadeDown"
+                                 Duration="TimeSpan.FromSeconds(0.5)"
+                                 Delay="TimeSpan.FromSeconds(0.5)">
+                            <ChangePassword OnUserUpdated="ChangePassword" />
+                        </Animate>
+                    </ChildContent>
+                </RadzenTabsItem>
+
+            </Tabs>
+        </RadzenTabs>
+    </ChildContent>
+</RadzenContent>
+
+<Notification @ref="_notificationRef" />
+
+@code {
+
+    #region Injects
+
+    [Inject]
+    private IAccountService _accountService { get; set; }
+
+    [Inject]
+    public UserInfoService _userInfo { get; set; }
+
+    #endregion
+
+    #region Variables
+
+    private UserProfileViewModel User { get; set; } = new();
+
+    [Parameter]
+    public ChangePasswordViewModel? ChangeUserPassword { get; set; }
+
+    private I18nText.MyText MyText = new();
+
+    private Notification? _notificationRef;
+
+    private string? _userId;
+
+    #endregion
+
+    #region LifeCycleMethods
+
+    protected override async Task OnInitializedAsync()
+    {
+        PhotoService.OnPhotoUpdated += UpdatePhotoHandler;
+        User = await _accountService.GetUserInfo();
+
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+    }
+
+    private void UpdatePhotoHandler(byte[] photoData)
+    {
+        StateHasChanged();
+    }
+
+    #endregion
+
+    #region Methods
+
+    private async Task<string> GetUserIdAsync() => await _userInfo.GetUserIdAsync();
+
+    private async Task ChangePassword(ChangePasswordViewModel changePassword)
+    {
+        var result = await _accountService.ChangePassword(changePassword);
+        if (result.Success)
+        {
+            _notificationRef!.ShowNotifications(MyText.changePassword, MyText.passwordChangedSuccessfully, NotificationSeverity.Success);
+        }
+        else
+        {
+            _notificationRef!.ShowNotifications(MyText.changePassword, $"{result.ErrorResponse?.Errors}", NotificationSeverity.Error, 6000);
+        }
+    }
+
+    private async void UpdateInfo()
+    {
+        await _accountService.UpdateUserInfo(User);
+    }
+
+    #endregion
+}

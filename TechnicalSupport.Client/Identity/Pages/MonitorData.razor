@@ -1,0 +1,268 @@
+﻿@page "/monitor-data"
+
+@inherits StateComponentBase
+@attribute [MustHavePermission(Permissions.ViewAccounts)]
+
+<MyMenuBar ExportGrid="ExportGrid"
+           IsGridView="@_isGridView"
+           SelectedDeleteFilter="@_selectedDeleteFilter"
+           ShowDropDownStatus="false"
+           ShowSwitchBetweenCardAndGrid="false"
+           ShowAddButton="false" />
+
+@if (_isLoading)
+{
+    <MyLoader />
+}
+else
+{
+    <MyGrid GridSource="_changeLogs"
+    SelectedItems="_selectedChnageLogs"
+    TItem="EntityChangeLogsViewModel"
+    OnGridInitialized="SetGridReference"
+    ShowActionButtons="false"
+    @ref="grid"
+    GridSettingsName="MonitorGridSettings">
+
+        <GridColumns>
+
+            <MyGridColumn TItem="EntityChangeLogsViewModel"
+            ColumnName="@nameof(EntityChangeLogsViewModel.ChangeLogId)"
+            Width="100px"
+            Frozen="true"
+            TextName="@MyText.recoredId" />
+
+            <MyGridColumn TItem="EntityChangeLogsViewModel"
+            ColumnName="@nameof(EntityChangeLogsViewModel.EntityName)"
+            Width="140px"
+            TextName="@MyText.entityName" />
+
+            <MyGridColumn TItem="EntityChangeLogsViewModel"
+            ColumnName="@nameof(EntityChangeLogsViewModel.Key)"
+            TextName="@MyText.key"
+            Width="120px" />
+
+            <MyGridColumn TItem="EntityChangeLogsViewModel"
+            ColumnName="@nameof(EntityChangeLogsViewModel.OldValue)"
+            TextName="@MyText.oldValue"
+            Width="120px" />
+
+            <MyGridColumn TItem="EntityChangeLogsViewModel"
+            ColumnName="@nameof(EntityChangeLogsViewModel.NewValue)"
+            TextName="@MyText.newValue"
+            Width="120px" />
+
+            <MyGridColumn TItem="EntityChangeLogsViewModel"
+            ColumnName="@nameof(EntityChangeLogsViewModel.ChangedBy)"
+            TextName="@MyText.changedBy"
+            Width="150px" />
+
+            <MyGridColumn TItem="EntityChangeLogsViewModel"
+            ColumnName="@nameof(EntityChangeLogsViewModel.ChangedByPc)"
+            TextName="@MyText.changedByPc"
+            Width="150px" />
+
+            <MyGridColumn TItem="EntityChangeLogsViewModel"
+            ColumnName="@nameof(EntityChangeLogsViewModel.ChangedAt)"
+            TextName="@MyText.changedAt"
+            Width="120px"
+            FormatString="{0:dd/MM/yyyy HH\:mm}" />
+        </GridColumns>
+
+    </MyGrid>
+
+    <Notification @ref="_notificationRef" />
+}
+
+@code {
+
+    #region
+
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthState { get; set; }
+
+    [CascadingParameter(Name = Strings.CurrentCulture)]
+    public string? AppCulture { get; set; }
+
+    #endregion
+
+    #region Injects
+
+    [Inject]
+    protected IAuthorizationService _authService { get; set; } = default!;
+
+    [Inject]
+    private IMainService<EntityChangeLogsViewModel>? _changeLogsService { get; set; }
+
+    #endregion
+
+    #region "Variables"
+
+    private I18nText.MyText MyText = new();
+
+    private bool _isLoading = false;
+
+    private bool _isGridView = true;
+
+    private RadzenDataGrid<EntityChangeLogsViewModel> grid;
+
+    private List<EntityChangeLogsViewModel> _changeLogs = new();
+
+    private List<EntityChangeLogsViewModel> _originalChangeLogs = new();
+
+    private List<EntityChangeLogsViewModel> _selectedChnageLogs = new();
+
+    private DialogOptions _options = new Radzen.DialogOptions() { Width = "500px", Height = "270px", ShowClose = false };
+
+    private string _searchText = string.Empty;
+
+    private string _selectedColumn = string.Empty;
+
+    private string _selectedSearchType = string.Empty;
+
+    private string _selectedDeleteFilter = Strings.Active;
+
+    private List<DropDownItem> _columns = new();
+
+    private List<DropDownItem> _searchTypes = new();
+
+    private Notification _notificationRef;
+
+    private bool _canView;
+
+    #endregion
+
+    #region "LifeCycle Methods"
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isLoading = true;
+
+        await LoadLocalizedText();
+        await LoadPermissions();
+        await LoadChangeLogs();
+        SearchChangeLogsStatus();
+
+        _isLoading = false;
+    }
+
+    protected override async Task OnParametersSetAsync() => await LoadLocalizedText();
+
+    private async Task LoadLocalizedText() =>  MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+
+    private async Task LoadPermissions()
+    {
+        var user = (await AuthState).User;
+        _canView = await _authService.HasPermissionAsync(user, Permissions.ViewCompanies);
+    }
+
+    #endregion
+
+    #region "Events"
+
+    private void SetGridReference(RadzenDataGrid<EntityChangeLogsViewModel> gridReference)
+    {
+        grid = gridReference; //Important For Export Grid
+    }
+
+    private void OnSearchChange(string newValue) => _searchText = newValue;
+
+    private void SelectedColumnChanged(string newValue) => _selectedColumn = newValue;
+
+    private void SelectedSearchTypeChanged(string newValue) => _selectedSearchType = newValue;
+
+    #endregion
+
+    #region "CrudOperations"
+
+    private async Task LoadChangeLogs()
+    {
+        var result = await _changeLogsService!.GetAll($"{ApiRoutes.v1}/{ApiRoutes.EntityChanges.GetAllEntityChanges}");
+        _changeLogs = result ?? new List<EntityChangeLogsViewModel>();
+
+        _selectedChnageLogs = new List<EntityChangeLogsViewModel> { _changeLogs?.LastOrDefault() };
+        _originalChangeLogs = new List<EntityChangeLogsViewModel>(_changeLogs);
+    }
+
+    #endregion
+
+    #region "Helper Methods"
+
+    private void SearchChangeLogsStatus()
+    {
+        _changeLogs = GlobalFunctions.SearchEntitiesStatus(
+                     _originalChangeLogs,
+                     _searchText,
+                     _selectedColumn,
+                     _selectedSearchType,
+                     _selectedDeleteFilter
+        );
+    }
+
+    private void OnDeleteFilterChange(object value)
+    {
+        _selectedDeleteFilter = value.ToString();
+        SearchChangeLogsStatus(); // Reapply the filter whenever the delete filter changes
+    }
+
+    #endregion
+
+    #region "Export Methods"
+
+    private async Task ExportGrid(ExportType exportType)
+    {
+        if (_changeLogs != null && _changeLogs.Any())
+        {
+            List<EntityChangeLogsViewModel> exportData = new();
+
+            List<Dictionary<string, object>> formattedExportData = new();
+
+            Dictionary<string, string> columnTitles = new Dictionary<string, string>
+                                {
+                                    { nameof(EntityChangeLogsViewModel.ChangeLogId), MyText.id },
+                                    { nameof(EntityChangeLogsViewModel.EntityName), MyText.name },
+                                    { nameof(EntityChangeLogsViewModel.Key),MyText.key },
+                                    { nameof(EntityChangeLogsViewModel.OldValue),MyText.oldValue },
+                                    { nameof(EntityChangeLogsViewModel.NewValue),MyText.newValue },
+                                    { nameof(EntityChangeLogsViewModel.ChangedBy),MyText.changedBy },
+                                    { nameof(EntityChangeLogsViewModel.ChangedAt),MyText.changedAt },
+                                    { nameof(EntityChangeLogsViewModel.ChangedByPc),MyText.changedByPc }
+                                };
+
+            if (_isGridView)
+            {
+                var pickedColumns = grid.ColumnsCollection
+                                        .Where(c => c.Pickable && c.Visible)
+                                        .Select(c => c.Property);
+
+                if (!string.IsNullOrEmpty(grid.Query.Filter))
+                {
+                    var query = grid.Query.Filter;
+                    var filteredEntitiesChanged = _changeLogs.AsQueryable().Where(query).ToList();
+
+                    exportData = mapper.Map<List<EntityChangeLogsViewModel>>(filteredEntitiesChanged).ToList();
+                }
+                else
+                {
+                    exportData = mapper.Map<List<EntityChangeLogsViewModel>>(_changeLogs).ToList();
+                }
+
+                formattedExportData = exportHelper.ConvertToDictionary(exportData, columnTitles, null);
+            }
+            else
+            {
+                exportData = mapper.Map<List<EntityChangeLogsViewModel>>(_changeLogs).ToList();
+
+                formattedExportData = exportHelper.ConvertToDictionary(exportData, columnTitles, null);
+            }
+
+            await exportListService.ExportAsync(exportType, formattedExportData, Strings.EntitiesChanged, MyText.pdfMonitorDataTitle, AppCulture);
+        }
+    }
+
+    #endregion
+}
+
+
+
+

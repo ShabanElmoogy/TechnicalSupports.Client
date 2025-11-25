@@ -1,0 +1,239 @@
+﻿@page "/oraganize-tasks"
+
+@inject DialogService DialogService
+
+<RadzenScheduler @ref=@scheduler
+                 style="height: 750px;"
+                 TItem="AppointmentViewModel"
+                 Data=@appointments
+                 StartProperty="Start"
+                 EndProperty="End"
+                 TextProperty="Text"
+                 SelectedIndex="2"
+                 SlotRender=@OnSlotRender
+                 SlotSelect=@OnSlotSelect
+                 AppointmentSelect=@OnAppointmentSelect
+                 AppointmentRender=@OnAppointmentRender
+                 AppointmentMove=@OnAppointmentMove>
+
+    <RadzenDayView />
+    <RadzenWeekView />
+    <RadzenMonthView />
+    <RadzenYearView />
+
+</RadzenScheduler>
+
+<Notification @ref="NotificationRef" />
+
+@code {
+
+    [Inject]
+    private IMainService<AppointmentViewModel> _appointmentService { get; set; }
+
+    private RadzenScheduler<AppointmentViewModel> scheduler;
+
+    private Notification NotificationRef;
+
+    private Dictionary<DateTime, string> events = new Dictionary<DateTime, string>();
+
+    IList<AppointmentViewModel> appointments = new List<AppointmentViewModel>();
+
+    private string _userId { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _userId = await _userInfoService.GetUserIdAsync();
+        await LoadAppointments();
+    }
+
+    private async Task LoadAppointments()
+    {
+        try
+        {
+            var response = await _appointmentService.GetAll($"{ApiRoutes.v1}/{ApiRoutes.Appointments.GetAllAppointments}/{_userId}");
+
+            if (response is not null)
+            {
+                appointments = response;
+                await scheduler.Reload();
+            }
+            else
+            {
+                NotificationRef.ShowNotifications("error", "error");
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationRef.ShowNotifications("error", "An error occurred while fetching appointments.");
+        }
+    }
+
+    private void OnSlotRender(SchedulerSlotRenderEventArgs args)
+    {
+        // Highlight today in month view
+        if (args.View.Text == "Month" && args.Start.Date == DateTime.Today)
+        {
+            args.Attributes["style"] = "background: var(--rz-scheduler-highlight-background-color, rgba(255,220,40,.2));";
+        }
+
+        // Highlight working hours (9-18)
+        if ((args.View.Text == "Week" || args.View.Text == "Day") && args.Start.Hour > 8 && args.Start.Hour < 19)
+        {
+            args.Attributes["style"] = "background: var(--rz-scheduler-highlight-background-color, rgba(255,220,40,.2));";
+        }
+    }
+
+    private async Task OnSlotSelect(SchedulerSlotSelectEventArgs args)
+    {
+        if (args.View.Text != "Year")
+        {
+            AppointmentViewModel data = await DialogService.OpenAsync<AddAppointmentPage>("Add AppointmentViewModel",
+                new Dictionary<string, object> { { "Start", args.Start }, { "End", args.End } });
+
+            if (data != null)
+            {
+                appointments.Add(data);
+                await scheduler.Reload();
+                await SaveAppointment(data);
+                await LoadAppointments();
+            }
+        }
+    }
+
+    private async Task OnAppointmentSelect(SchedulerAppointmentSelectEventArgs<AppointmentViewModel> args)
+    {
+        // Make a copy of the selected appointment, ensuring it's independent from the dialog's data
+        var copy = new AppointmentViewModel
+            {
+                Start = args.Data.Start,
+                End = args.Data.End,
+                Text = args.Data.Text
+            };
+
+        // Create a separate copy of 'copy' to pass to the dialog so 'copy' remains unaffected
+        var dialogData = new AppointmentViewModel
+            {
+                Start = copy.Start,
+                End = copy.End,
+                Text = copy.Text
+            };
+
+        // Open the EditAppointment dialog, passing the separate 'dialogData' object (it will be modified by the dialog)
+        var data = await DialogService.OpenAsync<EditAppointmentPage>("Edit AppointmentViewModel", new Dictionary<string, object> { { "AppointmentViewModel", dialogData } });
+
+        // If 'data' contains the modified appointment
+        if (data != null)
+        {
+            // 'copy' remains unchanged, and 'data' contains the modified version
+            List<AppointmentViewModel> combinedList = new List<AppointmentViewModel> { copy, data };
+
+            // Proceed with updating the appointment using 'copy' and 'data'
+            var response = await _appointmentService.UpdateListRow(combinedList, $"{ApiRoutes.v1}/{ApiRoutes.Appointments.EditAppointment}");
+            if (response.Success)
+            {
+                appointments.Remove(copy);
+
+                // Update the local appointments list after the successful API call
+                int index = -1;
+                for (int i = 0; i < appointments.Count; i++)
+                {
+                    if (appointments[i].Start == copy.Start && appointments[i].End == copy.End)
+                    {
+                        index = i;
+                        break;
+                    }
+                }
+
+                if (index >= 0)
+                {
+                    appointments[index] = data;  // Replace the old appointment with the updated one
+                }
+
+                // Reload the scheduler after the update is successful
+                await scheduler.Reload();
+                await LoadAppointments();
+                DialogService.Close(true);
+            }
+            else
+            {
+                NotificationRef.ShowNotifications("error", "Error occurred while updating the appointment.");
+            }
+        }
+    }
+
+    private void OnAppointmentRender(SchedulerAppointmentRenderEventArgs<AppointmentViewModel> args)
+    {
+        // Never call StateHasChanged in AppointmentRender - would lead to infinite loop
+
+        if (args.Data.Text == "Birthday")
+        {
+            args.Attributes["style"] = "background: red";
+        }
+    }
+
+    private async Task OnAppointmentMove(SchedulerAppointmentMoveEventArgs args)
+    {
+        var draggedAppointment = appointments.FirstOrDefault(x => x == args.Appointment.Data);
+
+        if (draggedAppointment != null)
+        {
+            // Create a copy of the original appointment to represent the old position
+            var oldAppointment = new AppointmentViewModel
+                {
+                    Start = draggedAppointment.Start,
+                    End = draggedAppointment.End,
+                    Text = draggedAppointment.Text,
+                    // Add any other properties needed for the backend
+                };
+
+            // Update the dragged appointment to reflect the new position
+            draggedAppointment.Start += args.TimeSpan;
+            draggedAppointment.End += args.TimeSpan;
+
+            try
+            {
+                // Send the old and new appointment data to the backend
+                var combinedList = new List<AppointmentViewModel> { oldAppointment, draggedAppointment };
+                var response = await _appointmentService.UpdateListRow(combinedList, $"{ApiRoutes.v1}/{ApiRoutes.Appointments.EditAppointment}");
+
+                if (response.Success)
+                {
+                    // Remove the old appointment from the local list
+                    appointments.Remove(oldAppointment);
+
+                    // Add the updated appointment to the list
+                    appointments.Add(draggedAppointment);
+
+                    // Reload the scheduler to reflect changes
+                    await scheduler.Reload();
+                }
+            }
+            catch (Exception ex)
+            {
+                NotificationRef.ShowNotifications("error", "An error occurred while processing the appointment move.");
+            }
+        }
+    }
+
+    private async Task SaveAppointment(AppointmentViewModel appointment)
+    {
+        try
+        {
+            var response = await _appointmentService.AddNewRow(appointment, $"{ApiRoutes.v1}/{ApiRoutes.Appointments.AddAppointment}");
+            if (response.Success)
+            {
+                appointments.Add(appointment);
+                await scheduler.Reload();
+                DialogService.Close(true);
+            }
+            else
+            {
+                NotificationRef.ShowNotifications("error", "error");
+            }
+        }
+        catch (Exception ex)
+        {
+
+        }
+    }
+}

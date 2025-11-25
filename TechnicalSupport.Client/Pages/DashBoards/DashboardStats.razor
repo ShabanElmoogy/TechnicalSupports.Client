@@ -1,0 +1,41 @@
+﻿@using TechnicalSupport.Client.ViewModels.Dashboard
+
+<RadzenCard Style="margin-bottom:10px" id="top">
+
+    <RadzenRow JustifyContent="JustifyContent.SpaceBetween" 
+               AlignItems="AlignItems.Center" 
+               Style="margin-bottom: 10px">
+
+        <CardCounter Title="@MyText.companies" Counter="CompanyCount" Image="images/company.jpg" />
+        <CardCounter Title="@MyText.systemUsers" Counter="UserCount" Image="images/users.jpg" />
+        <CardCounter Title="@MyText.companyUsers" Counter="CompanyUserCount" Image="images/companyusers.jpg" />
+        <CardCounter Title="@MyText.servers" Counter="ServerAddressCount" Image="images/servers.jpg" />
+
+        <dotlottie-player src="/animations/Test_Animate.json"
+                          background="transparent"
+                          speed="1"
+                          class="dotlottie-player"
+                          style="width: 200px; height: 200px;"
+                          loop autoplay>
+        </dotlottie-player>
+
+    </RadzenRow>
+</RadzenCard>
+
+@code {
+
+    [Parameter] public int CompanyCount { get; set; }
+    [Parameter] public int UserCount { get; set; }
+    [Parameter] public int CompanyUserCount { get; set; }
+    [Parameter] public int ServerAddressCount { get; set; }
+
+    [CascadingParameter(Name = Strings.CurrentCulture)]
+    public string? AppCulture { get; set; }
+
+    private I18nText.MyText MyText = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+    }
+}

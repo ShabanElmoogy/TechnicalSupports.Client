@@ -1,0 +1,120 @@
+﻿@using TechnicalSupport.Client.Core.Services.Dashboard
+@using TechnicalSupport.Client.ViewModels.Dashboard
+
+<RadzenRow JustifyContent="JustifyContent.Center" AlignItems="AlignItems.Center">
+    <RadzenColumn SizeMD="8">
+        <RadzenCard>
+            <MyGridLabel LabelText="@MyText.companies" />
+
+            <MyGrid GridSource="Companies"
+                    SelectedItems="SelectedCompany"
+                    TItem="CompanyViewModel"
+                    OnGridInitialized="SetGridReference"
+                    ShowActionButtons="false"
+                    @ref="_companyGridRef">
+
+                <GridColumns>
+
+                    <MyGridColumn TItem="CompanyViewModel"
+                                  ColumnName="Id"
+                                  Width="110px"
+                                  Frozen="true"
+                                  TextName="@MyText.id" />
+
+                    <MyGridColumn TItem="CompanyViewModel"
+                                  ColumnName="@(nameof(CompanyViewModel.NameAr))"
+                                  MinWidth="165px"
+                                  TextName="@MyText.companyNameAr" />
+
+                    <MyGridColumn TItem="CompanyViewModel"
+                                  ColumnName="@(nameof(CompanyViewModel.NameEn))"
+                                  MinWidth="165px"
+                                  TextName="@MyText.companyNameEn" />
+
+                    <MyGridColumn TItem="CompanyViewModel"
+                                  ColumnName="ServerDetail.Address"
+                                  TextName="@MyText.address"
+                                  Width="150px" />
+
+                    <MyGridColumn TItem="CompanyViewModel"
+                                  ColumnName="CreatedOn"
+                                  TextName="@MyText.createdOn"
+                                  Width="155px"
+                                  FormatString="{0:dd/MM/yyyy HH\:mm}" />
+
+                    <MyGridColumn TItem="CompanyViewModel"
+                                  ColumnName="UpdatedOn"
+                                  TextName="@MyText.updatedOn"
+                                  Width="155px"
+                                  FormatString="{0:dd/MM/yyyy HH\:mm}" />
+
+                    <MyToggledColumn TItem="CompanyViewModel"
+                                     ColumnName="IsDeleted"
+                                     Width="115px"
+                                     Condition="@(c => c.IsDeleted)" />
+
+                </GridColumns>
+            </MyGrid>
+        </RadzenCard>
+    </RadzenColumn>
+
+    <RadzenColumn SizeMD="4">
+        <RadzenCard>
+            <MyGridLabel LabelText="@MyText.userslist" />
+
+            <RadzenDataGrid Data="Users"
+                            TItem="UserViewModel"
+                            AllowVirtualization="true"
+                            AllowPaging="true"
+                            PageSize="5"
+                            Style="height:200px"
+                            Density="Density.Compact">
+                <Columns>
+                    <RadzenDataGridColumn Property="UserName"
+                                          Width="100px"
+                                          Frozen="true"
+                                          Title="@MyText.username" />
+                </Columns>
+            </RadzenDataGrid>
+        </RadzenCard>
+    </RadzenColumn>
+</RadzenRow>
+
+@code {
+    [Inject] private IDashboardDataService _dashboardDataService { get; set; }
+
+    [Parameter] public List<CompanyViewModel> Companies { get; set; } = [];
+    [Parameter] public List<UserViewModel> Users { get; set; } = [];
+
+    [Parameter] public IList<CompanyViewModel> SelectedCompany { get; set; } = new List<CompanyViewModel>();
+    [Parameter] public EventCallback<IList<CompanyViewModel>> SelectedCompanyChanged { get; set; }
+
+    // EventCallback to send grid reference to parent
+    [Parameter] public EventCallback<RadzenDataGrid<CompanyViewModel>> OnGridReferenceReady { get; set; }
+
+    private RadzenDataGrid<CompanyViewModel> _grid;
+    private RadzenDataGrid<CompanyViewModel>? _companyGridRef;
+
+    [CascadingParameter(Name = Strings.CurrentCulture)]
+    public string? AppCulture { get; set; }
+
+    private I18nText.MyText MyText = new();
+
+    protected override async Task OnInitializedAsync()
+
+    {
+        var x = Companies;
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+    }
+
+    private async void SetGridReference(RadzenDataGrid<CompanyViewModel> gridReference)
+    {
+        _grid = gridReference; //Important For Export Grid
+
+        // Send the grid reference to the parent component
+        if (OnGridReferenceReady.HasDelegate)
+        {
+            await OnGridReferenceReady.InvokeAsync(gridReference);
+        }
+    }
+}

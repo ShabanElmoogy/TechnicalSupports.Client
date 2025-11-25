@@ -1,0 +1,217 @@
+﻿@inherits StateComponentBase
+@implements IAsyncDisposable
+
+<RadzenCard>
+    <RadzenTemplateForm TItem="CompanyUsersViewModel" Data=@_companyUser Submit="@SaveCompanyUser">
+
+        <RadzenFormField Text="@MyText.companyUser" Style="width: 100%">
+            <RadzenTextBox Name="@nameof(CompanyUsersViewModel.Name)"
+            MaxLength="50"
+            AutoCompleteType="AutoCompleteType.Off"
+            @bind-Value="@_companyUser.Name"
+            @ref="_txtFocus" />
+        </RadzenFormField>
+        <RadzenRequiredValidator Component="@nameof(CompanyUsersViewModel.Name)" Text="@MyText.requiredField" />
+
+        <RadzenFormField Text="@MyText.companyId" Style="width: 100%">
+            <RadzenNumeric ShowUpDown="false"
+            Name="@nameof(CompanyUsersViewModel.CompanyId)"
+            Disabled="true"
+            @bind-Value="@_companyUser.CompanyId" />
+        </RadzenFormField>
+        <RadzenRequiredValidator Component="@nameof(CompanyUsersViewModel.CompanyId)" Text="@MyText.requiredField" />
+
+        <RadzenFormField Text="@MyText.anydesk" Style="width: 100%">
+            <RadzenTextBox Name="@nameof(CompanyUsersViewModel.AnyDesk)"
+            MaxLength="20"
+            AutoCompleteType="AutoCompleteType.Off"
+            @bind-Value="@_companyUser.AnyDesk" />
+        </RadzenFormField>
+
+        <RadzenFormField Text="@MyText.anyDeskPassword" Style="width: 100%">
+            <RadzenTextBox Name="@nameof(CompanyUsersViewModel.AnyDeskPassword)"
+            MaxLength="20"
+            AutoCompleteType="AutoCompleteType.Off"
+            @bind-Value="@_companyUser.AnyDeskPassword" />
+        </RadzenFormField>
+
+        <RadzenFormField Text="@MyText.serverPassword" Style="width: 100%">
+            <RadzenTextBox Name="@nameof(CompanyUsersViewModel.ServerPassword)"                          
+            MaxLength="20"
+            AutoCompleteType="AutoCompleteType.Off"
+            @bind-Value="@_companyUser.ServerPassword" />
+        </RadzenFormField>
+
+        <RadzenFormField Text="@MyText.cloudUser" Style="width: 100%">
+            <RadzenTextBox Name="@nameof(CompanyUsersViewModel.CloudUser)"                    
+            MaxLength="20"
+            AutoCompleteType="AutoCompleteType.Off"
+            @bind-Value="@_companyUser.CloudUser" />
+        </RadzenFormField>
+
+        <RadzenFormField Text="@MyText.cloudUserPassword" Style="width: 100%">
+            <RadzenTextBox Name="@nameof(CompanyUsersViewModel.CloudUserPassword)"
+            MaxLength="20"
+            AutoCompleteType="AutoCompleteType.Off"
+            @bind-Value="@_companyUser.CloudUserPassword" />
+        </RadzenFormField>
+
+        <RadzenRow JustifyContent="JustifyContent.End" Style="margin-top: 10px;">
+            <RadzenButton ButtonType="ButtonType.Submit"
+            Size="ButtonSize.Small"
+            IsBusy="@_isBusy"
+            BusyText="@MyText.submitting"
+            Text="@MyText.save">
+
+            </RadzenButton>
+            <RadzenButton ButtonType="ButtonType.Button" Size="ButtonSize.Small" Click="CloseDialog">@MyText.close</RadzenButton>
+        </RadzenRow>
+
+    </RadzenTemplateForm>
+</RadzenCard>
+
+@code {
+
+    #region Injects
+
+    [Inject]
+    private IMainService<CompanyUsersViewModel>? _companyUserService { get; set; }
+
+    #endregion
+
+    #region Parameters
+
+    [Parameter]
+    public int? Id { get; set; }
+
+    [Parameter]
+    public CompanyUsersViewModel? EditedCompanyUser { get; set; }
+
+    [Parameter]
+    public EventCallback<List<string>> OnError { get; set; }
+
+    [Parameter]
+    public EventCallback OnSuccess { get; set; }
+
+    #endregion
+
+    #region Variables
+
+    public CompanyUsersViewModel _companyUser { get; set; } = new();
+
+    public CompanyUsersViewModel _originalCompanyUser { get; set; } = new();
+
+    private RadzenTextBox _txtFocus;
+
+    private bool _isBusy;
+
+    private I18nText.MyText MyText = new();
+
+    private HubConnection? _hubConnection { get; set; }
+
+    #endregion
+
+    #region LifeCycleMethod
+
+    private async Task ConnectToCompanyHub()
+    {
+        var apiAddress = Configuration.GetValue<string>(Strings.MainApiAddress);
+        _hubConnection = new HubConnectionBuilder()
+           .WithUrl($"{apiAddress}{SignalRRoutes.CompanyHub}")
+           .Build();
+
+        await _hubConnection.StartAsync();
+    }
+
+
+    protected async override Task OnInitializedAsync()
+    {
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+        IntaializeEditedCompanyUser();
+        await ConnectToCompanyHub();
+        _companyUser.CompanyId = StateContainer.SharedCompanies.FirstOrDefault()?.Id ?? 0;
+    }
+
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await _txtFocus.FocusAsync();
+    }
+
+    private void IntaializeEditedCompanyUser()
+    {
+        if (EditedCompanyUser?.Id > 0)
+        {
+            _companyUser = EditedCompanyUser;
+            _originalCompanyUser = EditedCompanyUser.DeepClone();
+        }
+        else
+        {
+            _companyUser = new CompanyUsersViewModel(); 
+        }
+
+        _companyUser.CompanyId = StateContainer.SharedCompanies.FirstOrDefault()?.Id ?? 0;
+    }
+
+    #endregion
+
+    #region Methods
+
+    private async Task SaveCompanyUser()
+    {
+        _isBusy = true;
+
+        if (_companyUser.Id > 0)
+        {
+            var response = await _companyUserService!.UpdateRow(_companyUser, $"{ApiRoutes.v1}/{ApiRoutes.CompanyUsers.UpdateCompanyUser}");
+            if (response.Success)
+            {
+                await OnSuccess.InvokeAsync();
+                //await _hubConnection.InvokeAsync(nameof(SignalRMethods.sendcompanyusersupdatenotification), _companyUser.Name);
+                dialogService.Close(true);
+            }
+            else
+            {
+                await OnError.InvokeAsync(response.ErrorResponse.Errors.Values.SelectMany(list => list).ToList());
+            }
+        }
+        else
+        {
+            var response = await _companyUserService!.AddNewRow(_companyUser, $"{ApiRoutes.v1}/{ApiRoutes.CompanyUsers.AddCompanyUser}");
+            if (response.Success)
+            {
+                await OnSuccess.InvokeAsync();
+                //await _hubConnection.InvokeAsync(nameof(SignalRMethods.sendcompanyusersupdatenotification), _companyUser.Name);
+                dialogService.Close(true);
+            }
+            else
+            {
+                await OnError.InvokeAsync(response.ErrorResponse.Errors.Values.SelectMany(list => list).ToList());
+            }
+        }
+
+        _isBusy = false;
+    }
+
+    private void CloseDialog()
+    {
+        if (_isBusy)
+            return;
+
+        _originalCompanyUser.DeepCloneTo(_companyUser);
+
+        dialogService.Close(false);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection != null)
+        {
+            await _hubConnection.StopAsync();
+            await _hubConnection.DisposeAsync();
+        }
+    }
+
+    #endregion
+}

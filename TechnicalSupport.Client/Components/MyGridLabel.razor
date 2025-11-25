@@ -1,0 +1,14 @@
+﻿<RadzenRow JustifyContent="JustifyContent.Center"
+           AlignItems="AlignItems.Center"
+           Style="@($"margin-bottom: 10px; background-color: {(CurrentTheme == "Dark" ? MyColors.Dark : MyColors.Light)}")">
+
+    <RadzenLabel Text="@LabelText" Style="font-size: 30px"></RadzenLabel>
+</RadzenRow>
+
+@code {
+    [CascadingParameter(Name = Strings.CurrentTheme)]
+    public string? CurrentTheme { get; set; }
+
+    [Parameter]
+    public string LabelText { get; set; }
+                }

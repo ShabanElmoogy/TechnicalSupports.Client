@@ -1,0 +1,12 @@
+﻿@page "/auth/logout"
+
+@code {
+    [Inject]
+    private IAuthenticationServiceFactory _authenticationService { get; set; }
+
+    [Inject]
+    private NavigationManager _navigationManager { get; set; }
+
+    protected async override Task OnInitializedAsync() => await _authenticationService.LogoutAsync();
+
+}

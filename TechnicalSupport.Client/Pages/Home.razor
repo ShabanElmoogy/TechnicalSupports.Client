@@ -1,0 +1,21 @@
+﻿@page "/"
+@using TechnicalSupport.Client.Pages.DashBoards
+@attribute [MustHavePermission(Permissions.ViewCompanies)]
+
+@if (showHomeLoader)
+{
+    <MyLoader2 LoaderText="Loading Dashboard..." />
+}
+
+<MainDashboard CustomLoaderChanged="HandleCustomLoaderChanged" Visible="@(!showHomeLoader)" />
+
+
+@code {
+    private bool showHomeLoader = true;
+
+    private void HandleCustomLoaderChanged(bool isLoading)
+    {
+        showHomeLoader = isLoading;
+        StateHasChanged(); // Force re-render
+    }
+}

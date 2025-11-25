@@ -1,0 +1,298 @@
+﻿@using Toolbelt.Blazor.PWA.Updater
+@inherits LayoutComponentBase
+
+<RadzenComponents />
+<RadzenDialog />
+<PWAUpdater />
+
+
+<RadzenLayout dir="@_currentDirection" lang="@_currentCulture">
+
+    <RadzenHeader>
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0">
+            <RadzenSidebarToggle Click="ToggleSidebar" />
+
+            <RadzenLabel class="d-none d-md-block"
+                         Text="@MyText.archieve"
+                         Style="white-space:nowrap;cursor:pointer;font-weight:bold"
+                         @onclick="@(() => NavManager.NavigateTo("/"))" />
+
+            <RadzenSplitter />
+
+            <RadzenStack class="@(_currentCulture == Strings.ar ? "rz-ml-3" : "rz-mr-3")"
+                         Orientation="Orientation.Horizontal"
+                         AlignItems="AlignItems.Center"
+                         Gap="1rem"
+                         Wrap="FlexWrap.Wrap">
+
+                <MyToggleTheme CurrentTheme="CurrentTheme" ToggleTheme="ToggleTheme" />
+            </RadzenStack>
+
+            <CultureSelector />
+
+            <RadzenProfileMenu Style="width:300px;" class="profile">
+                <Template>
+                    <RadzenStack class="text-center" Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                        <RadzenLabel Text="@_userName?.ToUpper()"
+                                     class="user-name d-none d-md-block fw-bold cursor-pointer responsive-label"
+                                     Style="white-space:nowrap;font-size:15px" />
+
+                        <Animate Animation="Animations.ZoomOut" Delay="TimeSpan.FromSeconds(0.5)" Duration="TimeSpan.FromSeconds(1)">
+                            <RadzenImage Path="@GetUserProfileImage()"
+                                         class="responsive-image"
+                                         Style="width: 2rem; height: 2rem; border-radius: 50%;" />
+                        </Animate>
+                    </RadzenStack>
+                </Template>
+                <ChildContent>
+                    <RadzenProfileMenuItem Text="Profile" Path="@InternalRoutes.Profile" Icon="account_circle" IconColor="#ff6d41" />
+                    <RadzenProfileMenuItem Text="Clear Cache" Icon="account_circle" IconColor="#ff6d41" @onmousedown="@ClearCacheStorage" />
+                    <RadzenProfileMenuItem Text="LogOut" Path="@InternalRoutes.Logout" Icon="logout" IconColor="#ff6d41" />
+                </ChildContent>
+            </RadzenProfileMenu>
+        </RadzenStack>
+    </RadzenHeader>
+
+    <RadzenSidebar @bind-Expanded="@_sidebarExpanded"
+                   Responsive="false"
+                   style="@($"position:absolute; top:0; {(_currentDirection == Strings.rtl ? "right:0" : "left:0")}; z-index:3;")">
+
+        <RadzenStack AlignItems="AlignItems.End" class="rz-p-2">
+            <RadzenButton Icon="west"
+                          Variant="Variant.Text"
+                          ButtonStyle="ButtonStyle.Secondary"
+                          Click="@(() => _sidebarExpanded = false)" />
+        </RadzenStack>
+        <RadzenPanelMenu>
+
+            <RadzenRow JustifyContent="JustifyContent.Center">
+                <RadzenImage Path="@GetUserProfileImage()"
+                             class="responsive-image"
+                             Style="width: 8rem; height: 8rem; border-radius: 50%;" />
+            </RadzenRow>
+
+            <hr style="border: 1px solid #ccc; margin: 20px 0;" />
+
+            <RadzenPanelMenuItem Style="font-weight:bold;font-size:16px" Text="@MyText.companydata" Icon="source_environment">
+                <MyPanelItem ItemText="@MyText.companies" ItemPath="companies" ItemIcon="store" SidebarExpanded="@ToggleSidebar" />
+                <MyPanelItem ItemText="@MyText.serverAddress" ItemPath="serversAddress" ItemIcon="dns" SidebarExpanded="@ToggleSidebar" />
+            </RadzenPanelMenuItem>
+
+            <RadzenPanelMenuItem Style="font-weight:bold;font-size:16px" Text="@MyText.importData" Icon="source_environment">
+                <MyPanelItem ItemText="@MyText.importCompanies" ItemPath="import-companies" ItemIcon="upload" SidebarExpanded="@ToggleSidebar" />
+                <MyPanelItem ItemText="@MyText.importServers" ItemPath="import-servers" ItemIcon="upload" SidebarExpanded="@ToggleSidebar" />
+                <MyPanelItem ItemText="@MyText.importCompanyUsers" ItemPath="import-companyusers" ItemIcon="upload" SidebarExpanded="@ToggleSidebar" />
+            </RadzenPanelMenuItem>
+
+            <RadzenPanelMenuItem Style="font-weight:bold;font-size:16px" Text="@MyText.reports" Icon="source_environment">
+                <MyPanelItem ItemText="@MyText.companiesReport" ItemPath="companies-report" ItemIcon="local_convenience_store" SidebarExpanded="@ToggleSidebar" />
+            </RadzenPanelMenuItem>
+
+            <RadzenPanelMenuItem Style="font-weight:bold;font-size:16px" Text="@MyText.usermanagement" Icon="source_environment">
+                <MyPanelItem ItemText="@MyText.roleManager" ItemPath="roles" ItemIcon="gavel" SidebarExpanded="@ToggleSidebar" />
+                <MyPanelItem ItemText="@MyText.usersData" ItemPath="users" ItemIcon="group" SidebarExpanded="@ToggleSidebar" />
+            </RadzenPanelMenuItem>
+
+            <RadzenPanelMenuItem Style="font-weight:bold;font-size:16px" Text="@MyText.filenamagement" Icon="cloud_upload">
+                <MyPanelItem ItemText="@MyText.filenamagement" ItemPath="files-manager" ItemIcon="folder" SidebarExpanded="@ToggleSidebar" />
+            </RadzenPanelMenuItem>
+
+            <RadzenPanelMenuItem Style="font-weight:bold;font-size:16px" Text="@MyText.extras" Icon="tools_phillips">
+                <MyPanelItem ItemText="@MyText.organizer" ItemPath="oraganize-tasks" ItemIcon="tools_phillips" SidebarExpanded="@ToggleSidebar" />
+            </RadzenPanelMenuItem>
+
+            <AuthorizeView Roles="admin">
+
+                <RadzenPanelMenuItem Style="font-weight:bold;font-size:16px" Text="@MyText.advancedAuthorize" Icon="source_environment">
+                    <MyPanelItem ItemText="@MyText.backgroundJobs" ItemPath="https://technicalapinew.runasp.net/jobs" ItemIcon="work_update" SidebarExpanded="@ToggleSidebar" />
+                    <MyPanelItem ItemText="@MyText.healthCheck" ItemPath="health-check" ItemIcon="fact_check" SidebarExpanded="@ToggleSidebar" />
+                    <MyPanelItem ItemText="@MyText.apiEndpoints" ItemPath="api-endpoints" ItemIcon="api" SidebarExpanded="@ToggleSidebar" />
+                    <MyPanelItem ItemText="@MyText.apiLocalization" ItemPath="localization-grid" ItemIcon="g_translate" SidebarExpanded="@ToggleSidebar" />
+                </RadzenPanelMenuItem>
+            </AuthorizeView>
+
+            <AuthorizeView Roles="admin">
+                <RadzenPanelMenuItem Style="font-weight:bold;font-size:16px" Text="@MyText.monitor" Icon="source_environment">
+                    <MyPanelItem ItemText="@MyText.monitorData" ItemPath="monitor-data" ItemIcon="monitoring" SidebarExpanded="@ToggleSidebar" />
+                    <MyPanelItem ItemText="@MyText.dashboard" ItemPath="main-dashboard" ItemIcon="monitoring" SidebarExpanded="@ToggleSidebar" />
+                </RadzenPanelMenuItem>
+            </AuthorizeView>
+
+        </RadzenPanelMenu>
+    </RadzenSidebar>
+
+    <CascadingValue Value="_currentTheme" Name="CurrentTheme">
+        <CascadingValue Value="@_currentCulture" Name="CurrentCulture">
+            <RadzenBody>
+                <div class="rz-p-4">
+                    @Body
+                </div>
+            </RadzenBody>
+
+            @if (_sidebarExpanded)
+            {
+                <div @onclick="@(() => _sidebarExpanded = false)" class="rz-dialog-mask" style="position: absolute; z-index: 2"></div>
+            }
+        </CascadingValue>
+    </CascadingValue>
+
+</RadzenLayout>
+
+@code {
+    private async Task ClearCacheStorage()
+    {
+        var result = await dialogService.Confirm(MyText.checkDeleteCache, MyText.clearCache);
+
+        if (result == false)
+        {
+            return;
+        }
+        else
+        {
+            await jsRuntime.InvokeVoidAsync(JsFunctions.ClearApplicationStorage);
+            NavManager.NavigateTo("/", forceLoad: true);
+        }
+    }
+
+    #region Injects
+
+    [Inject]
+    public IAuthenticationServiceFactory authenticationServiceFactory { get; set; }
+
+    #endregion
+
+    #region Variables
+
+    private I18nText.MyText MyText = new();
+
+    private string? _currentCulture { get; set; }
+
+    private string? _currentDirection { get; set; }
+
+    private string? _currentTheme { get; set; }
+
+    private bool _sidebarExpanded = false;
+
+    private string? _userName;
+
+    private string? _userId;
+
+    private string? _userPictureBase64;
+
+    private string? _userPictureSrc;
+
+    private byte[]? UserProfilePhoto;
+
+    #endregion
+
+    #region LifeCycle Methods
+
+    protected async override Task OnInitializedAsync()
+    {
+        SubscribeToEvents();
+        await InitializeAppAsync();
+
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+        UpdateCurrentDirection();
+
+        _sidebarExpanded = false;
+    }
+
+    private void SubscribeToEvents()
+    {
+        CultureService.OnCultureChanged += OnCultureChangedHandler;
+        PhotoService.OnPhotoUpdated += OnPhotoUpdatedHandler;
+    }
+
+    private async Task InitializeAppAsync()
+    {
+        await InitializeUserInfoAsync();
+        await InitializeThemeAsync();
+        await InitializeUserPhotoAsync();
+    }
+
+    #endregion
+
+    #region Events
+
+    private async Task OnChangeTheme(string theme)
+    {
+        _currentTheme = theme;
+        await jsRuntime.InvokeVoidAsync(JsFunctions.OnClickLightDark, _currentTheme);
+    }
+
+    void OnPhotoUpdatedHandler(byte[]? userProfilePhoto)
+    {
+        if (userProfilePhoto is not null)
+        {
+            UserProfilePhoto = userProfilePhoto;
+            _userPictureBase64 = Convert.ToBase64String(UserProfilePhoto);
+            _userPictureSrc = $"data:image/*;base64,{_userPictureBase64}";
+        }
+
+        GetUserProfileImage();
+        StateHasChanged();
+    }
+
+    void OnCultureChangedHandler()
+    {
+        UpdateCurrentDirection();
+        StateHasChanged();
+    }
+
+    #endregion
+
+    #region Helper Methods
+
+    private void ToggleSidebar() => _sidebarExpanded = !_sidebarExpanded;
+
+    private async Task ToggleTheme()
+    {
+        _currentTheme = _currentTheme == Strings.LightTheme ? Strings.DarkTheme : Strings.LightTheme;
+        await OnChangeTheme(_currentTheme);
+    }
+
+    private void UpdateCurrentDirection()
+    {
+        _currentCulture = CultureService.GetCurrentCulture();
+        _currentDirection = _currentCulture == Strings.ar ? Strings.rtl : Strings.ltr;
+    }
+
+    private string GetUserProfileImage()
+    {
+        if (_userPictureBase64 is not null)
+            return _userPictureSrc;
+
+        return Strings.DefaultUserImage;
+    }
+
+    private async Task InitializeThemeAsync()
+    {
+        _currentTheme = await jsRuntime.InvokeAsync<string>(JsFunctions.GetCurrentTheme);
+    }
+
+    private async Task InitializeUserInfoAsync()
+    {
+        _userName = await _userInfoService.GetUserNameAsync();
+        _userId = await _userInfoService.GetUserIdAsync();
+    }
+
+    private async Task InitializeUserPhotoAsync()
+    {
+        await PhotoService.LoadPhotoFromDatabaseAsync(_userId);
+        UserProfilePhoto = PhotoService.GetCurrentPhoto();
+
+        if (UserProfilePhoto is not null)
+        {
+            _userPictureBase64 = Convert.ToBase64String(UserProfilePhoto);
+            _userPictureSrc = $"data:image/*;base64,{_userPictureBase64}";
+        }
+    }
+
+    public void Dispose()
+    {
+        CultureService.OnCultureChanged -= OnCultureChangedHandler;
+        PhotoService.OnPhotoUpdated -= OnPhotoUpdatedHandler;
+    }
+    #endregion
+}

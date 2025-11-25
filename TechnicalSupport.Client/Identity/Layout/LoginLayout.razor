@@ -1,0 +1,86 @@
+﻿@inherits LayoutComponentBase
+
+<RadzenComponents />
+<RadzenDialog />
+
+<RadzenLayout>
+    <RadzenHeader>
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0" Style="margin:10px">
+            <RadzenIcon Icon="home" class="fs-5 mx-2" @onclick="@(() => NavManager.NavigateTo("/"))" />
+            <RadzenLabel class="d-none d-md-block fs-6"
+                         Text="@(_currentCulture ==Strings.ar ? Strings.HomeAr : Strings.HomeEn)"
+                         Style="white-space:nowrap;cursor:pointer;font-weight:bold"
+                         @onclick="@(() => NavManager.NavigateTo("/"))" />
+            <RadzenSplitter />
+
+            <CultureSelector />
+
+            <RadzenStack class="@(_currentCulture ==Strings.ar ? " rz-ml-3" : "rz-mr-3" )"
+                         Orientation="Orientation.Horizontal"
+                         AlignItems="AlignItems.Center"
+                         Gap="1rem"
+                         Wrap="FlexWrap.Wrap">
+                <RadzenButton Click=@(args => ToggleTheme()) Size="ButtonSize.Small">
+                    @{
+                        if (currentTheme == Strings.LightTheme)
+                        {
+                            <RadzenIcon Icon="@GoogleIcons.DarkMode" />
+                        }
+                        else
+                        {
+                            <RadzenIcon Icon="@GoogleIcons.LightMode" />
+                        }
+                    }
+                </RadzenButton>
+            </RadzenStack>
+        </RadzenStack>
+    </RadzenHeader>
+
+    <CascadingValue Value="currentTheme" Name="LoginLayoutTheme">
+        <RadzenBody>
+            <div class="rz-p-4">
+                @Body
+            </div>
+        </RadzenBody>
+    </CascadingValue>
+
+</RadzenLayout>
+
+
+@code {
+    string currentTheme = string.Empty;
+
+    private I18nText.MyText MyText = new();
+
+    private string _currentCulture { get; set; }
+
+    private async Task ToggleTheme()
+    {
+        currentTheme = (currentTheme == Strings.LightTheme) ? Strings.DarkTheme : Strings.LightTheme;
+        await OnChangeTheme(currentTheme);
+    }
+
+    private async Task OnChangeTheme(string theme)
+    {
+        currentTheme = theme;
+        await jsRuntime.InvokeVoidAsync(JsFunctions.OnClickLightDark, currentTheme);
+    }
+
+    protected override void OnInitialized()
+    {
+        CultureService.OnCultureChanged += OnCultureChangedHandler;
+        _currentCulture = CultureService.GetCurrentCulture();
+    }
+
+    void OnCultureChangedHandler()
+    {
+        _currentCulture = CultureService.GetCurrentCulture();
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            currentTheme = await jsRuntime.InvokeAsync<string>(JsFunctions.GetCurrentTheme);
+    }
+}

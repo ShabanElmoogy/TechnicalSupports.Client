@@ -1,0 +1,263 @@
+﻿@implements IAsyncDisposable
+
+<RadzenCard>
+
+    <RadzenTemplateForm TItem="UserViewModel" Data=@_user Submit="@SaveUser">
+
+        <RadzenFormField Text="id" Style="width: 100%" Visible="false">
+            <RadzenTextBox MaxLength="50"
+                           AutoCompleteType="AutoCompleteType.Off"
+                           @bind-Value="@_user.Id" />
+        </RadzenFormField>
+
+        <RadzenFormField Text="@MyText.firstName" Style="width: 100%;">
+            <RadzenTextBox MaxLength="50"
+                           Name="@nameof(UserViewModel.FirstName)"
+                           AutoCompleteType="AutoCompleteType.Off"
+                           @bind-Value="@_user.FirstName"
+                           @ref="_txtFocus" />
+        </RadzenFormField>
+        <RadzenRequiredValidator Component="@nameof(UserViewModel.FirstName)" Text="@MyText.requiredField" />
+
+        <RadzenFormField Text="@MyText.lastName" Style="@_formFieldStyle">
+            <RadzenTextBox MaxLength="50"
+                           Name="@nameof(UserViewModel.LastName)"
+                           AutoCompleteType="AutoCompleteType.Off"
+                           @bind-Value="@_user.LastName" />
+        </RadzenFormField>
+        <RadzenRequiredValidator Component="@nameof(UserViewModel.LastName)" Text="@MyText.requiredField" />
+
+        <RadzenFormField Text="@MyText.username" Style="@_formFieldStyle">
+            <RadzenTextBox MaxLength="50"
+                           Name="@nameof(UserViewModel.UserName)"
+                           AutoCompleteType="AutoCompleteType.Off"
+                           @bind-Value="@_user.UserName" />
+        </RadzenFormField>
+        <RadzenRequiredValidator Component="@nameof(UserViewModel.UserName)" Text="@MyText.requiredField" />
+
+        <RadzenFormField Text="@MyText.email" Style="@_formFieldStyle">
+            <RadzenTextBox MaxLength="50"
+                           AutoCompleteType="AutoCompleteType.Off"
+                           Name="@nameof(UserViewModel.Email)"
+                           @bind-Value="@_user.Email" />
+        </RadzenFormField>
+        <RadzenRequiredValidator Component="@nameof(UserViewModel.Email)" Text="@MyText.requiredField" />
+        <RadzenEmailValidator Component="@nameof(UserViewModel.Email)" Text="@MyText.invalidEmailFormat" />
+
+        <RadzenFormField Text="@MyText.password" Style="@_formFieldStyle" Visible="@(!_isEditMode)">
+            <RadzenTextBox MaxLength="50"
+                           Name="@nameof(UserViewModel.Password)"
+                           @bind-Value="@_user.Password" />
+        </RadzenFormField>
+
+        @if (!_isEditMode)
+        {
+            <RadzenRequiredValidator Component="@nameof(UserViewModel.Password)" Text="@MyText.requiredField" />
+            <RadzenLengthValidator Component="@nameof(UserViewModel.Password)" Text="@MyText.passwordLength" Min="8" />
+            <RadzenRegexValidator Component="@nameof(UserViewModel.Password)" Text="@MyText.passwordPattern" Pattern="@RegexPatterns.Password" />
+        }
+
+        <RadzenFormField Text="@MyText.roles" Style="@_formFieldStyle">
+            <RadzenDropDown Data="_roles"
+                            Name="Roles"
+                            AllowFiltering="true"
+                            AllowClear="true"
+                            AllowVirtualization="true"
+                            ClearSearchAfterSelection="true"
+                            Placeholder="Select Role"
+                            Count="@_roles.Count"
+                            Multiple=true
+                            Change="OnRoleChange"
+                            @bind-Value="_selectedRoles">
+            </RadzenDropDown>
+        </RadzenFormField>
+        <RadzenRequiredValidator Component="Roles" Text="@MyText.requiredField" />
+
+        <RadzenRow JustifyContent="JustifyContent.End" Style="margin-top: 10px;">
+
+            <RadzenButton ButtonType="ButtonType.Submit"
+                          Size="ButtonSize.Small"
+                          IsBusy="@_isBusy"
+                          BusyText="@MyText.submitting"
+                          Text="@MyText.save">
+            </RadzenButton>
+
+            <RadzenButton ButtonType="ButtonType.Button"
+                          Size="ButtonSize.Small"
+                          Click="CloseDialog">
+                @MyText.close
+            </RadzenButton>
+
+        </RadzenRow>
+    </RadzenTemplateForm>
+</RadzenCard>
+
+@code {
+
+    #region "Injects"
+
+    [Inject]
+    private IMainService<UserViewModel>? _userService { get; set; }
+
+    [Inject]
+    private IMainService<RoleViewModel>? _roleService { get; set; }
+
+    #endregion
+
+    #region Parameters
+
+    [Parameter]
+    public UserViewModel? EditedUser { get; set; }
+
+    [Parameter]
+    public EventCallback<List<string>> OnError { get; set; }
+
+    [Parameter]
+    public EventCallback OnSuccess { get; set; }
+
+    #endregion
+
+    #region "Variables"
+
+    private I18nText.MyText MyText = new();
+
+    private string _formFieldStyle = "width: 100%;margin-top:20px";
+
+    private UserViewModel? _user { get; set; } = new();
+
+    private RadzenTextBox _txtFocus;
+
+    private bool _isBusy = false;
+
+    private UserViewModel _originalUser = new();
+
+    private List<string> _selectedRoles = [];
+
+    private List<string> _roles = [];
+
+    private HubConnection? _hubConnection { get; set; }
+
+    private bool _isEditMode => !string.IsNullOrEmpty(EditedUser?.Id);
+
+    #endregion
+
+    #region "LifeCycle Methods"
+
+    protected async override Task OnInitializedAsync()
+    {
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+        InializeEditUser();
+        await LoadRoles();
+        await ConnectToCompanyHub();
+    }
+
+    private async Task ConnectToCompanyHub()
+    {
+        var apiAddress = Configuration.GetValue<string>(Strings.MainApiAddress);
+        _hubConnection = new HubConnectionBuilder()
+           .WithUrl($"{apiAddress}{SignalRRoutes.CompanyHub}")
+           .Build();
+
+        await _hubConnection.StartAsync();
+    }
+
+    private void InializeEditUser()
+    {
+        if (!string.IsNullOrEmpty(EditedUser?.Id))
+        {
+            _user = EditedUser.DeepClone();
+            _originalUser = EditedUser.DeepClone();
+            _selectedRoles = new List<string>(_user.Roles ?? Enumerable.Empty<string>());
+        }
+        else
+        {
+            _user = new UserViewModel();
+            _selectedRoles = new List<string>();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await _txtFocus.FocusAsync();
+    }
+
+    #endregion
+
+    #region "Methods"
+
+    private async Task LoadRoles()
+    {
+        var result = await _roleService!.GetAll($"{ApiRoutes.v1}/{ApiRoutes.Roles.GetAllRoles}");
+        _roles = result.Where(x => !x.IsDeleted).Select(x => x.Name).ToList();
+    }
+
+    private void OnRoleChange(object args)
+    {
+        _user.Roles = _selectedRoles != null ? new List<string>(_selectedRoles) : new List<string>();
+    }
+
+    private async Task SaveUser()
+    {
+        _isBusy = true;
+        try
+        {
+            if (_user.Id.IsEmpty())
+            {
+                var response = await _userService!.AddNewRow(_user, $"{ApiRoutes.v1}/{ApiRoutes.Users.AddUser}");
+                if (response.Success)
+                {
+                    await OnSuccess.InvokeAsync();
+                    await _hubConnection.InvokeAsync(nameof(SignalRMethods.sendusersupdatenotification), _user.UserName);
+                    dialogService.Close(true);
+                }
+                else
+                {
+                    await OnError.InvokeAsync(response.ErrorResponse.Errors.Values.SelectMany(list => list).ToList());
+                }
+            }
+            else
+            {
+                var response = await _userService!.UpdateRow(_user, $"{ApiRoutes.v1}/{ApiRoutes.Users.UpdateUser}/{_user.Id}");
+                if (response.Success)
+                {
+                    await OnSuccess.InvokeAsync();
+                    await _hubConnection.InvokeAsync(nameof(SignalRMethods.sendusersupdatenotification), _user.UserName);
+                    dialogService.Close(true);
+                }
+                else
+                {
+                    await OnError.InvokeAsync(response.ErrorResponse.Errors.Values.SelectMany(list => list).ToList());
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await OnError.InvokeAsync(new List<string> { $"{ex.Message}" });
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void CloseDialog()
+    {
+        if (_isBusy)
+            return;
+
+        _originalUser.DeepCloneTo(_user);
+        dialogService.Close(false);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection != null)
+        {
+            await _hubConnection.StopAsync();
+            await _hubConnection.DisposeAsync();
+        }
+    }
+
+    #endregion
+}

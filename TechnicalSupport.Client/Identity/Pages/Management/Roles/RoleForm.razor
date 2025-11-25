@@ -1,0 +1,158 @@
+﻿<RadzenCard>
+
+    <RadzenTemplateForm TItem="RoleViewModel" Data=@_role Submit="@SaveRole">
+        <DataAnnotationsValidator />
+
+        <RadzenFormField Text="@MyText.roleName" Style="width: 100%">
+            <RadzenTextBox Name="@nameof(RoleViewModel.Name)"
+                           AutoCompleteType="AutoCompleteType.Off"
+                           MaxLength="50"
+                           @bind-Value="@_role.Name"
+                           @ref="_focusText" />
+        </RadzenFormField>
+        <RadzenRequiredValidator Component="@nameof(RoleViewModel.Name)" Text="@MyText.requiredField" />
+
+        <RadzenRow JustifyContent="JustifyContent.End" Style="margin-top: 10px;">
+
+            <RadzenButton ButtonType="ButtonType.Submit"
+                          Size="ButtonSize.Small"
+                          IsBusy="@_isBusy"
+                          BusyText="@MyText.submitting"
+                          Text="@MyText.save">
+            </RadzenButton>
+
+            <RadzenButton ButtonType="ButtonType.Button"
+                          Size="ButtonSize.Small"
+                          Click="CloseDialog">
+                @MyText.close
+            </RadzenButton>
+
+        </RadzenRow>
+    </RadzenTemplateForm>
+
+</RadzenCard>
+
+@code {
+
+    #region "Injects"
+
+    [Inject]
+    private IMainService<RoleViewModel>? _roleService { get; set; }
+
+    #endregion
+
+    #region Parameters
+
+    [Parameter]
+    public RoleViewModel? EditedRole { get; set; }
+
+    [Parameter]
+    public EventCallback<List<string>> OnError { get; set; }
+
+    [Parameter]
+    public EventCallback OnSuccess { get; set; }
+
+    #endregion
+
+    #region "Variables"
+
+    private I18nText.MyText MyText = new();
+
+    private RoleViewModel _role { get; set; } = new();
+
+    private List<string> _selectedPermissions = new List<string>();
+
+    private RadzenTextBox _focusText;
+
+    private bool _isBusy = false;
+
+    private RoleViewModel _originalRole = new();
+
+    #endregion
+
+    #region "LifeCycle Methods"
+
+    private void IntializeEditedRole()
+    {
+        if (!string.IsNullOrEmpty(EditedRole?.Id))
+        {
+            _role = EditedRole;
+            _originalRole = EditedRole.DeepClone();
+        }
+        else
+        {
+            _role = new RoleViewModel();
+        }
+    }
+
+    protected async override Task OnInitializedAsync()
+    {
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+        IntializeEditedRole();
+    }
+
+    protected override void OnParametersSet() => IntializeEditedRole();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await _focusText.FocusAsync();
+    }
+
+    #endregion
+
+    #region "Methods"
+
+    private async Task SaveRole()
+    {
+        _isBusy = true;
+        try
+        {
+            if (_role.Id.IsEmpty())
+            {
+                var response = await _roleService!.AddNewRow(_role, $"{ApiRoutes.v1}/{ApiRoutes.Roles.AddRole}");
+                if (response.Success)
+                {
+                    await OnSuccess.InvokeAsync();
+                    dialogService.Close(true);
+                }
+                else
+                {
+                    await OnError.InvokeAsync(response.ErrorResponse.Errors.Values.SelectMany(list => list).ToList());
+                }
+            }
+            else
+            {
+                var response = await _roleService!.UpdateRow(_role, $"{ApiRoutes.v1}/{ApiRoutes.Roles.UpdateRole}");
+                if (response.Success)
+                {
+                    await OnSuccess.InvokeAsync();
+                    dialogService.Close(true);
+                }
+                else
+                {
+                    await OnError.InvokeAsync(response.ErrorResponse.Errors.Values.SelectMany(list => list).ToList());
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await OnError.InvokeAsync(new List<string> { { ex.Message } });
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void CloseDialog()
+    {
+        if (_isBusy)
+            return;
+
+        _originalRole.DeepCloneTo(_role);
+        dialogService.Close(false);
+    }
+
+    #endregion
+}

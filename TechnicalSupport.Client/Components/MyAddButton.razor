@@ -1,0 +1,41 @@
+﻿<RadzenColumn SizeXS="12" SizeMD="3" Visible="ShowAddButton">
+    <RadzenButton Click="@AddNew"
+                  Icon="@GoogleIcons.Add"
+                  Style="width:100%">
+        <RadzenRow JustifyContent="JustifyContent.SpaceBetween">
+            <RadzenLabel>@ButtonText</RadzenLabel>
+            <RadzenLabel>@MyText.ffour</RadzenLabel>
+        </RadzenRow>
+    </RadzenButton>
+</RadzenColumn>
+
+@code {
+
+    #region Parameters
+
+    [Parameter]
+    public bool ShowAddButton { get; set; } = true;
+
+    [Parameter]
+    public EventCallback AddNew { get; set; }
+
+    [Parameter]
+    public string? ButtonText { get; set; }
+
+    #endregion
+
+    #region Variables
+
+    private I18nText.MyText MyText = new();
+
+    #endregion
+
+    #region Methods
+
+    protected async override Task OnInitializedAsync()
+    {
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+    }
+
+    #endregion
+}

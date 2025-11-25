@@ -1,0 +1,81 @@
+﻿@typeparam TItem
+
+<Animate Animation="Animations.FlipRight" Easing="Easings.EaseInBack" Duration="TimeSpan.FromSeconds(0.5)" Delay="TimeSpan.FromSeconds(0.5)">
+    <RadzenRow id="card">
+        @foreach (var item in Items)
+        {
+            <RadzenColumn SizeXS="12" SizeSM="4">
+                <RadzenCard class="rz-shadow-2 rz-border-radius-2 rz-mb-3"
+                            style="@(OnCardClick.HasDelegate ? Strings.CursorPointer :Strings.CursorDefault)"
+                            @onclick="() => OnCardClick.InvokeAsync(item)">
+
+                    <RadzenPanel class="fw-bold fs-6 rz-background-color-base-200 rz-color-black mb-3">
+                        <RadzenRow JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+                            <RadzenIcon Icon="@(IsDeleted(item) ? GoogleIcons.Close : GoogleIcons.CheckCircle)"
+                                        IconStyle="@(IsDeleted(item) ? IconStyle.Danger : IconStyle.Success)"
+                                        Style="font-size: 24px;" />
+                            <RadzenRow>
+                                <span class="fw-bold fs-5">@GetName(item)</span>
+                            </RadzenRow>
+
+                        </RadzenRow>
+                    </RadzenPanel>
+
+                    <RadzenStack>
+                        @CardBody(item)
+
+                        <RadzenButton Icon="@GoogleIcons.Edit"
+                                      IconColor="@Radzen.Colors.Primary"
+                                      ButtonStyle="ButtonStyle.Light"
+                                      Variant="Variant.Flat"
+                                      Size="ButtonSize.Medium"
+                                      Click="@(() => EditItem.InvokeAsync(item))"
+                                      @onclick:stopPropagation="true" />
+
+                        @if (DeletePermission)
+                        {
+                            <RadzenButton Icon="@GoogleIcons.Delete"
+                                          IconColor="@Radzen.Colors.Danger"
+                                          ButtonStyle="ButtonStyle.Light"
+                                          Variant="Variant.Flat"
+                                          Size="ButtonSize.Medium"
+                                          Click="@(() => DeleteItem.InvokeAsync(item))"
+                                          @onclick:stopPropagation="true" />
+                        }
+
+                    </RadzenStack>
+                </RadzenCard>
+            </RadzenColumn>
+        }
+    </RadzenRow>
+</Animate>
+
+@code {
+    [Parameter]
+    public List<TItem>? Items { get; set; }
+
+    [Parameter]
+    public string Title { get; set; }
+
+    [Parameter]
+    public RenderFragment<TItem> CardBody { get; set; }
+
+    [Parameter]
+    public Func<TItem, string> GetName { get; set; }
+
+    [Parameter]
+    public Func<TItem, bool> IsDeleted { get; set; }
+
+    [Parameter]
+    public EventCallback<TItem> EditItem { get; set; }
+
+    [Parameter]
+    public EventCallback<TItem> DeleteItem { get; set; }
+
+    [Parameter]
+    public EventCallback<TItem> OnCardClick { get; set; }
+
+    [Parameter]
+    public bool DeletePermission { get; set; }
+
+}

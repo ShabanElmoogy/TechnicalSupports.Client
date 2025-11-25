@@ -1,0 +1,77 @@
+﻿@page "/error-page/{statusCode}"
+
+<RadzenStack Style="width:100%; height:calc(100vh - 320px)">
+    <RadzenStack JustifyContent="JustifyContent.Center" 
+                 AlignItems="AlignItems.Center" 
+                 Style="text-align:center">
+        <RadzenLabel Text="@GetErrorTitle()" Style="font-size: 50px; font-weight: bold;" />
+        <RadzenLabel Text="@GetErrorDescription()" Style="font-size: 30px;" />
+    </RadzenStack>
+
+    <RadzenStack JustifyContent="JustifyContent.Center"
+                 AlignItems="AlignItems.Center"
+                 Style="width:90%; max-width:400px; margin-inline:auto;">
+        <RadzenImage Path="@GetImagePath()"
+                     Style="max-width: 100%;max-width:400px; max-height: 280px; height: auto; margin-top: 10px;" />
+
+    </RadzenStack>
+
+    <RadzenStack JustifyContent="JustifyContent.Center" AlignItems="AlignItems.Center">
+        <RadzenButton Click="@(() => NavManager.NavigateTo("/"))"
+                      Text="Back to Home"
+                      Style="margin-top:10px; margin-bottom:10px; width:200px">
+        </RadzenButton>
+    </RadzenStack>
+</RadzenStack>
+
+@code {
+    [Parameter]
+    public string? statusCode { get; set; }
+
+    [CascadingParameter]
+    public string CurrentTheme { get; set; }
+
+    // Function to get the main error title based on the status code
+    private string GetErrorTitle()
+    {
+        return statusCode switch
+        {
+            "400" => "Bad Request",
+            "401" => "Unauthorized",
+            "403" => "Forbidden",
+            "404" => "Not Found",
+            "500" => "Internal Server Error",
+            _ => "Error"
+        };
+    }
+
+    // Function to get the error description
+    private string GetErrorDescription()
+    {
+        return statusCode switch
+        {
+            "400" => "Please check your request and try again",
+            "401" => "You are not authorized to access this resource",
+            "403" => "Access to this resource is denied",
+            "404" => "The resource you are looking for does not exist",
+            "500" => "Please try again later",
+            _ => "An unexpected error has occurred"
+        };
+    }
+
+    // Function to get the image path based on the status code
+    private string GetImagePath()
+    {
+        string themeSuffix = CurrentTheme == "Dark" ? "-dark" : "";
+
+        return statusCode switch
+        {
+            "400" => $"/images/errors/400{themeSuffix}.png",
+            "401" => $"/images/errors/401{themeSuffix}.jpg",
+            "403" => $"/images/errors/403{themeSuffix}.jpg",
+            "404" => $"/images/errors/404{themeSuffix}.png",
+            "500" => $"/images/errors/500{themeSuffix}.jpg",
+            _ => $"/images/errors/default{themeSuffix}.jpg"
+        };
+    }
+}

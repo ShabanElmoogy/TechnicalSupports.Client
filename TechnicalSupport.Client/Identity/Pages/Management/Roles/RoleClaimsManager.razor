@@ -1,0 +1,185 @@
+﻿@page "/manage-roleClaims/{roleId}"
+
+@if (_isLoading)
+{
+    <MyLoader />
+}
+else
+{
+    <RadzenCard>
+        <RadzenStack>
+            <EditForm Model="_roleViewModel" OnValidSubmit="UpdateRole">
+                <RadzenPanel class="@($"{(currentTheme == "dark" ? "rz-background-color-secondary-darker" : "rz-background-color-secondary-lighter")}")">
+                    <RadzenRow JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+                        <RadzenText Style="font-weight:bold;font-size:20px;margin-bottom:5px" Text="@($"Role : {_roleViewModel.Name}")" />
+                        <RadzenText Style="font-weight:bold;font-size:16px;margin-bottom:5px" Text="Add/Remove Permissions" />
+                        <RadzenIcon Icon="@GoogleIcons.Home" IconColor="@Colors.DangerDark" Style="font-size:30px;cursor:pointer" @onclick="@(() => NavManager.NavigateTo("/"))" />
+                    </RadzenRow>
+                </RadzenPanel>
+                <InputText type="hidden" @bind-Value="roleId" />
+                <RadzenRow AlignItems="AlignItems.Center" Style="margin-top:10px;font-size:14px;font-weight:bold">
+                    <RadzenLabel>Module Name</RadzenLabel>
+                    <RadzenDropDown @bind-Value="_selectedModule"
+                                    Data="@(Enum.GetValues(typeof(Modules)).Cast<Modules>().Select(m => m.ToString()))"
+                                    Placeholder="Select Module"
+                                    AllowFiltering="true"
+                                    AllowClear="true"
+                                    FilterCaseSensitivity="FilterCaseSensitivity.CaseInsensitive"
+                                    Style="width: 250px;" />
+                </RadzenRow>
+                <div class="table-responsive">
+                    <table class="table table-striped align-middle mt-2">
+                        <thead>
+                            <tr>
+                                <th><RadzenText>Module</RadzenText></th>
+                                <th>
+                                    <div class="form-check m-1">
+                                        <input type="checkbox"
+                                               class="form-check-input"
+                                               checked="@AreAllSelected(Strings.View)"
+                                               @onchange="@(e => SelectAll(Strings.View, (bool)e.Value))" />
+                                        <RadzenText>@(AreAllSelected(Strings.View) ? Strings.UnselectAll : Strings.SelectAll)</RadzenText>
+                                    </div>
+                                </th>
+                                <th>
+                                    <div class="form-check m-1">
+                                        <input type="checkbox"
+                                               class="form-check-input"
+                                               checked="@AreAllSelected(Strings.Create)"
+                                               @onchange="@(e => SelectAll(Strings.Create, (bool)e.Value))" />
+                                        <RadzenText>@(AreAllSelected(Strings.Create) ? Strings.UnselectAll : Strings.SelectAll)</RadzenText>
+                                    </div>
+                                </th>
+                                <th>
+                                    <div class="form-check m-1">
+                                        <input type="checkbox"
+                                               class="form-check-input"
+                                               checked="@AreAllSelected(Strings.Edit)"
+                                               @onchange="@(e => SelectAll(Strings.Edit, (bool)e.Value))" />
+                                        <RadzenText>@(AreAllSelected(Strings.Edit) ? Strings.UnselectAll : Strings.SelectAll)</RadzenText>
+                                    </div>
+                                </th>
+                                <th>
+                                    <div class="form-check m-1">
+                                        <input type="checkbox"
+                                               class="form-check-input"
+                                               checked="@AreAllSelected(Strings.Delete)"
+                                               @onchange="@(e => SelectAll(Strings.Delete, (bool)e.Value))" />
+                                        <RadzenText>@(AreAllSelected(Strings.Delete) ? Strings.UnselectAll : Strings.SelectAll)</RadzenText>
+                                    </div>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var module in Enum.GetValues(typeof(Modules)).Cast<Modules>())
+                            {
+                                if (string.IsNullOrEmpty(_selectedModule) || module.ToString().Equals(_selectedModule, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <tr>
+                                        <td><RadzenText>@module.ToString()</RadzenText></td>
+                                        @foreach (var claim in _roleViewModel.RoleClaims.Where(c => c.DisplayValue.StartsWith(module.ToString(), StringComparison.OrdinalIgnoreCase)))
+                                        {
+                                            <td>
+                                                <div class="form-check m-1">
+                                                    <input type="hidden" @bind="@claim.DisplayValue" />
+                                                    <input type="checkbox" @bind="@claim.IsSelected" class="form-check-input" />
+                                                    <label><RadzenText Text="@claim.DisplayValue.Split(':')[1]" /></label>
+                                                </div>
+                                            </td>
+                                        }
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <RadzenStack>
+                    <RadzenButton ButtonType="ButtonType.Submit" Text="Save" />
+                    <RadzenLink Path="/roles" Text="Back To Roles" />
+                </RadzenStack>
+            </EditForm>
+        </RadzenStack>
+    </RadzenCard>
+}
+
+@code {
+    #region Cascading Parameters
+
+    [CascadingParameter(Name = Strings.CurrentTheme)]
+    public string? currentTheme { get; set; }
+
+    #endregion
+
+    #region Parameters
+
+    [Parameter]
+    public string? roleId { get; set; }
+
+    #endregion
+
+    #region Injects
+
+    [Inject]
+    private IMainService<RoleViewModel> _roleService { get; set; }
+
+    #endregion
+
+    #region Variables
+
+    private RoleViewModel _roleViewModel = new();
+
+    private RoleViewModel _originalRoleViewModel = new();
+
+    private string? _selectedModule { get; set; }
+
+    private bool _isLoading = true;
+
+    #endregion
+
+    #region LifeCycleMethods
+
+    protected override async Task OnInitializedAsync() => await LoadRoleClaims();
+
+    #endregion
+
+    #region Methods
+
+    private void SelectAll(string suffix, bool isSelected)
+    {
+        var claims = _roleViewModel.RoleClaims?
+            .Where(c => c.DisplayValue.EndsWith($":{suffix}", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        // Set the state of the IsSelected property for each claim
+        foreach (var claim in claims)
+        {
+            claim.IsSelected = isSelected;
+        }
+    }
+
+    private bool AreAllSelected(string type)
+    {
+        return _roleViewModel.RoleClaims
+            .Where(c => c.DisplayValue.EndsWith($":{type}", StringComparison.OrdinalIgnoreCase))
+            .All(c => c.IsSelected);
+    }
+
+    private async Task UpdateRole()
+    {
+        await _roleService.UpdateRow(_roleViewModel, $"{ApiRoutes.v1}/{ApiRoutes.Roles.UpdateRoleClaims}?roleId={roleId}");
+        NavManager.NavigateTo(InternalRoutes.Roles);
+    }
+
+    private async Task LoadRoleClaims()
+    {
+        var result = await _roleService.GetRow($"{ApiRoutes.v1}/{ApiRoutes.Roles.GetRoleClaims}?roleId={roleId}");
+        if (result != null)
+        {
+            _roleViewModel = result;
+            _originalRoleViewModel = _roleViewModel.DeepClone();
+        }
+        _isLoading = false;
+    }
+
+    #endregion
+}

@@ -1,0 +1,476 @@
+﻿@page "/files-manager"
+
+@implements IAsyncDisposable
+@attribute [MustHavePermission(Permissions.ViewFiles)]
+
+<MyMenuBar AddNew="AddFile"
+           ButtonText="@MyText.addFile"
+           ExportGrid="ExportGrid"
+           IsGridView="@_isCardView"
+           ToggleView="@ToggleView"
+           SelectedDeleteFilter="@_selectedDeleteFilter"
+           OnDeleteFilterChange="@OnDeleteFilterChange" />
+
+@if (_customLoader)
+{
+    <MyLoader2 LoaderText="@_loaderText" />
+}
+
+@if (_isLoading)
+{
+    <MyLoader />
+}
+else
+{
+    @if (!_isCardView)
+    {
+        <MyGrid GridSource="_files"
+                SelectedItems="_selectedFile"
+                TItem="UploadFilesViewModel"
+                OnGridInitialized="SetGridReference"
+                @ref="_grid"
+                OnDeleteItem="(e) => DeleteFile(e)"
+                ShowEditButton="false"
+                DeletePermission="_canDelete"
+                GridSettingsName="UploadFilesGridSettings">
+
+            <GridColumns>
+
+                <MyGridColumn TItem="UploadFilesViewModel"
+                              ColumnName="@(nameof(UploadFilesViewModel.FileName))"
+                              MinWidth="120px"
+                              TextName="@MyText.fileName" />
+
+                <MyGridColumn TItem="UploadFilesViewModel"
+                              ColumnName="@(nameof(UploadFilesViewModel.CreatedOn))"
+                              Width="235px"
+                              TextName="@MyText.createdOn"
+                              FormatString="{0:dd/MM/yyyy HH\:mm}" />
+
+                <MyGridColumn TItem="UploadFilesViewModel"
+                              ColumnName="@(nameof(UploadFilesViewModel.ContentType))"
+                              TextName="@MyText.contentType"
+                              MinWidth="150px" />
+
+                <MyGridColumn TItem="UploadFilesViewModel"
+                              ColumnName="@(nameof(UploadFilesViewModel.FileExtension))"
+                              TextName="@MyText.fileExtension"
+                              Width="165px" />
+
+                <MyToggledColumn TItem="UploadFilesViewModel"
+                                 Width="120px"
+                                 Condition="@(c => c.IsDeleted)" />
+
+            </GridColumns>
+
+            <ActionButtons Context="file">
+                <RadzenButton ButtonStyle="ButtonStyle.Light"
+                              Icon="@GoogleIcons.Download"
+                              IconColor="@Colors.InfoDark"
+                              Variant="Variant.Flat"
+                              Size="ButtonSize.Medium"
+                              Click="@(() => DownLoadFile(file))"
+                              class="mx-1"
+                              @onclick:stopPropagation="true" />
+
+                <RadzenButton ButtonStyle="ButtonStyle.Light"
+                              Icon="@GoogleIcons.Visibility"
+                              IconColor="@Colors.InfoDark"
+                              Variant="Variant.Flat"
+                              Size="ButtonSize.Medium"
+                              Click="@(() => OpenFile(file))"
+                              Visible="@ShouldShowButton(file)"
+                              class="mx-1"
+                              @onclick:stopPropagation="true" />
+
+            </ActionButtons>
+        </MyGrid>
+    }
+    else
+    {
+        <MyMenuBarForCardView Columns="@_columns"
+                              OnSearchTextChanged="@OnSearchChange"
+                              OnSelectedColumnChanged="@SelectedColumnChanged"
+                              OnSelectedSearchTypeChanged="@SelectedSearchTypeChanged"
+                              OnSearch="@SearchFilesStatus" />
+
+        <MyCardViewPaging TItem="UploadFilesViewModel"
+                          Items="_files"
+                          GetName="@(file => file.FileName)"
+                          IsDeleted="@(file => file.IsDeleted)"
+                          DeleteItem="DeleteFile"
+                          DeletePermission="_canDelete">
+
+            <CardBody Context="file">
+                <MyCardLabel Label="@MyText.id" Content="@file.Id" />
+                <MyCardLabel Label="@MyText.fileName" Content="@file.FileName" />
+                <MyCardLabel Label="@MyText.storedFileName" Content="@file.StoredFileName" />
+                <MyCardLabel Label="@MyText.contentType" Content="@file.ContentType.MinimizeString(35)" />
+                <MyCardLabel Label="@MyText.fileExtension" Content="@file.FileExtension" />
+            </CardBody>
+        </MyCardViewPaging>
+    }
+    <Notification @ref="_notificationRef" />
+}
+
+@code {
+
+    #region CascadingParameters
+
+    [CascadingParameter(Name = Strings.CurrentCulture)]
+    public string? AppCulture { get; set; }
+
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthState { get; set; }
+
+    #endregion
+
+    #region Injects
+
+    [Inject]
+    protected IAuthorizationService _authService { get; set; } = default!;
+
+    [Inject]
+    private IMainService<UploadFilesViewModel>? _fileService { get; set; }
+
+    #endregion
+
+    #region "Variables"
+
+    private I18nText.MyText MyText = new();
+
+    private Notification _notificationRef;
+
+    private HotKeysContext? _hotKeysContext;
+
+    private string _editFileId = string.Empty;
+
+    private bool _isLoading = false;
+
+    private bool _isCardView = true;
+
+    private RadzenDataGrid<UploadFilesViewModel>? _grid;
+
+    private UploadFilesViewModel _file = new();
+
+    private UploadFilesViewModel? EditedFile { get; set; }
+
+    private List<UploadFilesViewModel> _files = new();
+
+    private List<UploadFilesViewModel> _originalFiles = new();
+
+    private List<UploadFilesViewModel> _selectedFile = new();
+
+    private DialogOptions options = new Radzen.DialogOptions() { Width = "500px", Height = "220px", ShowClose = false };
+
+    private string _searchText = string.Empty;
+
+    private string _selectedColumn = string.Empty;
+
+    private string _selectedSearchType = string.Empty;
+
+    private string _selectedDeleteFilter = Strings.Active;
+
+    private List<DropDownItem> _columns = new();
+
+    private List<DropDownItem> _searchTypes = new();
+
+    private bool _customLoader;
+
+    private string _loaderText = string.Empty;
+
+    private bool _canView;
+    private bool _canEdit;
+    private bool _canDelete;
+    private bool _canCreate;
+
+    private List<string> showButtonView = ["mp4", "webm", "pdf", "mp3", "rpt", "png", "jpg", "jpeg", "gif", "bmp"];
+
+    private bool ShouldShowButton(UploadFilesViewModel file)
+    {
+        var fileExtension = file.FileExtension.ToLower().Substring(1);
+        return showButtonView.Contains(fileExtension);
+    }
+
+    #endregion
+
+    #region "LifeCycle Methods"
+
+    protected override async Task OnInitializedAsync()
+    {
+        await InitializeComponentData();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadLocalizedText();
+        InitializeSearchColumn();
+        await ViewSate();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _hotKeysContext = this.HotKeys.CreateContext()
+                                          .Add(Code.F4, AddFile, new() { Description = "do foo bar." });
+        }
+    }
+
+    private async Task InitializeComponentData()
+    {
+        _isLoading = true;
+
+        await LoadLocalizedText();
+        await LoadPermissions();
+        await LoadFiles();
+        SearchFilesStatus();
+
+        _isLoading = false;
+    }
+
+    private async Task LoadLocalizedText()
+    {
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+    }
+
+    private void InitializeSearchColumn()
+    {
+        _columns = new List<DropDownItem>
+        {
+            new DropDownItem { Text = AppCulture == Strings.ar ? Strings.FileNameAr : Strings.FileNameEn, Value = Strings.FileName  }
+        };
+
+        if (string.IsNullOrEmpty(_selectedColumn) || !_columns.Any(c => c.Value == _selectedColumn))
+        {
+            _selectedColumn = _columns.FirstOrDefault()?.Value ?? string.Empty;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task LoadPermissions()
+    {
+        var user = (await AuthState).User;
+
+        _canView = await _authService.HasPermissionAsync(user, Permissions.ViewFiles);
+        _canCreate = await _authService.HasPermissionAsync(user, Permissions.CreateFiles);
+        _canEdit = await _authService.HasPermissionAsync(user, Permissions.EditFiles);
+        _canDelete = await _authService.HasPermissionAsync(user, Permissions.DeleteFiles);
+    }
+
+    private async Task ViewSate()
+    {
+        _isCardView = await storageService.GetItemAsync<bool>(Strings.FilesCardView);
+    }
+
+    #endregion
+
+    #region "Events"
+
+    private void SetGridReference(RadzenDataGrid<UploadFilesViewModel> gridReference) => _grid = gridReference;
+
+    private void OnSearchChange(string newValue) => _searchText = newValue;
+
+    private void SelectedColumnChanged(string newValue) => _selectedColumn = newValue;
+
+    private void SelectedSearchTypeChanged(string newValue) => _selectedSearchType = newValue;
+
+    private void OpenFile(UploadFilesViewModel uploadFilesViewModel)
+    {
+        NavManager.NavigateTo($"{InternalRoutes.ShowMedia}/{uploadFilesViewModel.Id}/{uploadFilesViewModel.FileExtension}");
+    }
+
+    #endregion
+
+    #region "CrudOperations"
+
+    private async Task LoadFiles()
+    {
+        var result = await _fileService!.GetAll($"{ApiRoutes.v1}/{ApiRoutes.UploadFiles.GetAllFiles}");
+
+        _files = result?.OrderBy(f => f.CreatedOn).ToList() ?? new List<UploadFilesViewModel>();
+        _originalFiles = new List<UploadFilesViewModel>(_files);
+        _selectedFile = new List<UploadFilesViewModel> { _files?.LastOrDefault() };
+    }
+
+    private async Task AddFile()
+    {
+        var parameters = new Dictionary<string, object>
+                             {
+                                { Strings.OnError, EventCallback.Factory.Create<List<string>>(this, HandleError) },
+                                { Strings.OnSuccess, EventCallback.Factory.Create<string>(this, (storedFileName) => HandleSuccess(storedFileName)) }
+                             };
+
+        var result = await dialogService.OpenAsync<FileForm>(MyText.addFile, parameters, options);
+    }
+
+    private void HandleError(List<string> errors)
+    {
+        foreach (var error in errors)
+            _notificationRef.ShowNotifications(error, Strings.Error, NotificationSeverity.Error);
+    }
+
+    private async Task HandleSuccess(string storedFileName)
+    {
+        await LoadFiles();
+        SearchFilesStatus();
+
+        StateHasChanged();
+
+        _selectedFile = new List<UploadFilesViewModel> { _files?.LastOrDefault() };
+        if (!_isCardView)
+            await radzenGridFunction.GoToPageByAsync(_files, _files?.LastOrDefault(), _grid, (c1, c2) => c1.Id == c2.Id);
+
+        _notificationRef.ShowNotifications(MyText.notificationSaveSummary, $"{MyText.notificationSaveDetail} {storedFileName} {MyText.successSave}");
+    }
+
+    private async Task DeleteFile(UploadFilesViewModel file)
+    {
+        bool? confirmation = await dialogService.Confirm($"{MyText.confirmDelete} {file.FileName} ?", MyText.deleteFile);
+        if (confirmation == true)
+        {
+            await PerformFileDeletion(file);
+
+            var currentIndex = _files.FindIndex(f => f.Id == file.Id);
+            await UpdateGridAfterFileDeletion(currentIndex);
+
+            _notificationRef.ShowNotifications(MyText.deletedSuccessfully, $"{file.FileName} {MyText.deletedSuccessfully}");
+        }
+    }
+
+    private async Task PerformFileDeletion(UploadFilesViewModel file)
+    {
+        await _fileService!.DeleteRow($"{ApiRoutes.v1}/{ApiRoutes.UploadFiles.DeleteFile}/{file.StoredFileName}");
+        await LoadFiles();
+        SearchFilesStatus();
+        StateHasChanged();
+    }
+
+    private async Task UpdateGridAfterFileDeletion(int currentIndex)
+    {
+        UploadFilesViewModel? targetFile = GetTargetFileAfterDeletion(currentIndex);
+
+        if (targetFile != null)
+        {
+            _selectedFile = new List<UploadFilesViewModel> { targetFile };
+            await _grid.Reload();
+            await radzenGridFunction.GoToPageByAsync(_files, targetFile, _grid, (f1, f2) => f1.Id == f2.Id);
+        }
+    }
+
+    private UploadFilesViewModel? GetTargetFileAfterDeletion(int currentIndex)
+    {
+        if (currentIndex > 0)
+            return _files.ElementAtOrDefault(currentIndex - 1); // Previous row
+
+        return _files.FirstOrDefault(); // First row
+    }
+
+    #endregion
+
+    #region "Helper Methods"
+
+    private async Task DownLoadFile(UploadFilesViewModel file)
+    {
+        _customLoader = true;
+        _loaderText = MyText.downloading;
+
+        var response = await fileService.DownloadFileAsync($"{ApiRoutes.v1}/{ApiRoutes.UploadFiles.DownLoadImage}", file.StoredFileName, file.FileName);
+
+        if (response is null && !response.Success)
+            _notificationRef.ShowNotifications(Strings.Error, Strings.Error, NotificationSeverity.Error);
+
+        _customLoader = false;
+    }
+
+    private void ToggleView()
+    {
+        _isCardView = !_isCardView;
+        storageService.SetItemAsync(Strings.FilesCardView, _isCardView);
+    }
+
+    private void SearchFilesStatus()
+    {
+        _files = GlobalFunctions.SearchEntitiesStatus(
+                     _originalFiles,
+                     _searchText,
+                     _selectedColumn,
+                     _selectedSearchType,
+                     _selectedDeleteFilter,
+                     c => c.IsDeleted
+        );
+
+        _selectedFile = new List<UploadFilesViewModel> { _files?.LastOrDefault() };
+    }
+
+    private void OnDeleteFilterChange(object value)
+    {
+        _selectedDeleteFilter = value.ToString();
+        SearchFilesStatus();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hotKeysContext != null)
+            await _hotKeysContext.DisposeAsync();
+    }
+
+    #endregion
+
+    #region "Export Methods"
+
+    private async Task ExportGrid(ExportType exportType)
+    {
+        if (_files != null && _files.Any())
+        {
+            List<UploadFilesExportModel> exportData = new();
+            List<Dictionary<string, object>> formattedExportData = new();
+
+            Dictionary<string, string> columnTitles = new Dictionary<string, string>
+                                            {
+                                                { nameof(UploadFilesViewModel.Id), MyText.id },
+                                                { nameof(UploadFilesViewModel.FileName), MyText.fileName },
+                                                { nameof(UploadFilesViewModel.StoredFileName), MyText.storedFileName },
+                                                { nameof(UploadFilesViewModel.FileExtension), MyText.fileExtension },
+                                                { nameof(UploadFilesViewModel.CreatedOn), MyText.createdon },
+                                                { nameof(UploadFilesViewModel.UpdatedOn), MyText.updatedOn },
+                                            };
+
+            if (!_isCardView)
+            {
+                var pickedColumns = _grid.ColumnsCollection
+                                        .Where(c => c.Pickable && c.Visible)
+                                        .Select(c => c.Property);
+
+                if (!string.IsNullOrEmpty(_grid.Query.Filter))
+                {
+                    var query = _grid.Query.Filter;
+                    var filteredCompanies = _files.AsQueryable().Where(query).ToList();
+
+                    exportData = mapper.Map<List<UploadFilesExportModel>>(filteredCompanies).ToList();
+                }
+                else
+                {
+                    exportData = mapper.Map<List<UploadFilesExportModel>>(_files).ToList();
+                }
+
+                formattedExportData = exportHelper.ConvertToDictionary(exportData, columnTitles, null);
+            }
+            else
+            {
+                exportData = mapper.Map<List<UploadFilesExportModel>>(_files).ToList();
+
+                formattedExportData = exportHelper.ConvertToDictionary(exportData, columnTitles, null);
+            }
+
+            await exportListService.ExportAsync(exportType, formattedExportData, Strings.Files, MyText.pdfFileManger, AppCulture);
+        }
+    }
+
+    #endregion
+}
+
+
+
+

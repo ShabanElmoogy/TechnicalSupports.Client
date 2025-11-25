@@ -1,0 +1,231 @@
+﻿
+<RadzenTemplateForm TItem="UserProfileViewModel" Method="Get" Data="User">
+    <ChildContent>
+
+        <RadzenRow>
+            <RadzenColumn Size="9">
+                <RadzenRow Style="margin-bottom:10px" AlignItems="AlignItems.Center">
+                    <RadzenColumn Size="2">
+                        <RadzenLabel Text="@MyText.username" style="width: 100%" />
+                    </RadzenColumn>
+
+                    <RadzenColumn Size="10">
+                        <MyClearButton ClearTextBox="@ClearUserName" Visible="@(!IsEditMode)">
+                            <TextBox>
+                                <RadzenTextBox Name="@nameof(UserProfileViewModel.UserName)"
+                                               @bind-Value="User.UserName"
+                                               style="width: 100%"
+                                               Disabled="!IsEditMode" />
+                                <RadzenRequiredValidator Component="@nameof(UserProfileViewModel.UserName)" Text="@MyText.requiredField" />
+                            </TextBox>
+                        </MyClearButton>
+                    </RadzenColumn>
+                </RadzenRow>
+
+                <RadzenRow Style="margin-bottom:10px" AlignItems="AlignItems.Center">
+
+                    <RadzenColumn Size="2">
+                        <RadzenLabel Text="@MyText.firstName" style="width: 100%" />
+                    </RadzenColumn>
+
+                    <RadzenColumn Size="10">
+                        <MyClearButton ClearTextBox="@ClearFirstName" Visible="@(!IsEditMode)">
+                            <TextBox>
+                                <RadzenTextBox Name="@nameof(UserProfileViewModel.FirstName)"
+                                               @bind-Value="User.FirstName"
+                                               style="width: 100%"
+                                               Disabled="!IsEditMode" />
+
+                                <RadzenRequiredValidator Component="@nameof(UserProfileViewModel.FirstName)" Text="@MyText.requiredField" />
+                            </TextBox>
+                        </MyClearButton>
+                    </RadzenColumn>
+
+                </RadzenRow>
+
+                <RadzenRow Style="margin-bottom:10px" AlignItems="AlignItems.Center">
+
+                    <RadzenColumn Size="2">
+                        <RadzenLabel Text="@MyText.lastName"
+                                     style="width: 100%" />
+                    </RadzenColumn>
+
+                    <RadzenColumn Size="10">
+                        <MyClearButton ClearTextBox="@ClearLastName" Visible="@(!IsEditMode)">
+                            <TextBox>
+                                <RadzenTextBox Name="@nameof(UserProfileViewModel.LastName)"
+                                               @bind-Value="User.LastName"
+                                               style="width: 100%"
+                                               Disabled="!IsEditMode" />
+
+                                <RadzenRequiredValidator Component="@nameof(UserProfileViewModel.LastName)" Text="@MyText.requiredField" />
+                            </TextBox>
+                        </MyClearButton>
+                    </RadzenColumn>
+
+                </RadzenRow>
+
+                <RadzenRow Style="margin-bottom:10px" AlignItems="AlignItems.Center">
+
+                    <RadzenColumn Size="2">
+                        <RadzenLabel Text="@MyText.userPhoto"
+                                     style="width: 100%" />
+                    </RadzenColumn>
+
+                    <RadzenColumn Size="10">
+                        <RadzenUpload Accept="image/*"
+                                      Multiple="false"
+                                      MaxFileCount="1"
+                                      Change="HandleFileChange"
+                                      Disabled="!IsEditMode"
+                                      Style="width:100%" />
+                    </RadzenColumn>
+
+                </RadzenRow>
+            </RadzenColumn>
+
+            <RadzenColumn Size="3" Style="text-align:center">
+                @if (!string.IsNullOrEmpty(_imgDataUrl))
+                {
+                    <img src="@_imgDataUrl" alt="Profile Picture" style="max-width: 200px; max-height: 350px;" />
+                }
+            </RadzenColumn>
+
+        </RadzenRow>
+
+        <RadzenRow Style="margin-bottom:10px">
+            <RadzenColumn Size="9">
+                <RadzenRow>
+                    <RadzenColumn Size="10" Offset="2">
+                        @if (IsEditMode)
+                        {
+                            <RadzenButton ButtonType="ButtonType.Submit"
+                                          Icon="@GoogleIcons.Save"
+                                          Text="@MyText.save"
+                                          Click="UpdateInfo" />
+                        }
+                        else
+                        {
+                            <RadzenButton ButtonType="ButtonType.Button"
+                                          Text="@MyText.edit"
+                                          Icon="@GoogleIcons.Edit"
+                                          Click="() => IsEditMode = true" />
+                        }
+                    </RadzenColumn>
+                </RadzenRow>
+
+            </RadzenColumn>
+        </RadzenRow>
+    </ChildContent>
+</RadzenTemplateForm>
+
+@code {
+    //TODO: Add Edit Picture
+
+    private void ClearUserName() => User.UserName = string.Empty;
+
+    private void ClearFirstName() => User.FirstName = string.Empty;
+
+    private void ClearLastName() => User.FirstName = string.Empty;
+
+    #region Parameters
+
+    [CascadingParameter(Name = "UserProfilePhoto")]
+    public byte[]? UserProfilePhoto { get; set; }
+
+    [Parameter]
+    public UserProfileViewModel? User { get; set; }
+
+    [Parameter]
+    public EventCallback<UserProfileViewModel> OnUserUpdated { get; set; }
+
+    #endregion
+
+    #region Injects
+
+    [Inject]
+    private IAccountService _accountService { get; set; }
+
+    #endregion
+
+    #region Variables
+
+    private I18nText.MyText MyText = new();
+
+    private bool IsEditMode { get; set; } = false;
+
+    private string? _imgDataUrl { get; set; }
+
+    private IBrowserFile? _selectedFile;
+
+    private byte[]? _userProfilePicture;
+
+    private string? _userId;
+
+    private bool IsPhotoUpdated = false;
+
+    #endregion
+
+    #region LifeCycleMethods
+
+    protected async override Task OnInitializedAsync()
+    {
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+    }
+
+    protected override void OnParametersSet()
+    {
+        // if (User?.ProfilePicture is not null && User.ProfilePicture.Length > 0)
+        // {
+        //     _imgDataUrl = $"data:image/*;base64,{Convert.ToBase64String(User.ProfilePicture)}";
+        // }
+        // else
+        // {
+        //     _imgDataUrl = "/images/user.png";
+        // }
+    }
+
+    
+    #endregion
+
+    #region Methods
+
+    private async Task HandleFileChange(UploadChangeEventArgs args)
+    {
+        if (args.Files.Any())
+        {
+            var file = args.Files.FirstOrDefault();
+            if (file != null)
+            {
+                _selectedFile = file;
+                using var stream = new MemoryStream();
+                await _selectedFile.OpenReadStream().CopyToAsync(stream);
+          
+
+                StateHasChanged();
+            
+
+                IsPhotoUpdated = true; // Mark as updated
+            }
+        }
+        else
+        {
+            // File removed
+            _imgDataUrl = string.Empty;
+            _selectedFile = null;
+            IsPhotoUpdated = false;
+        }
+
+        this.StateHasChanged(); // Update the UI
+    }
+
+    private async Task UpdateInfo()
+    {
+        await OnUserUpdated.InvokeAsync(User);
+        IsEditMode = false;
+        IsPhotoUpdated = false;
+    }
+
+
+    #endregion
+}

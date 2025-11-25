@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport"
+          content="width=device-width"
+          initial-scale=1.0
+          minimum-scale=1.0
+          maximum-scale=1.0
+          user-scalable=no>
+
+    <title>TechnicalSupport</title>
+    <base href="/" />
+
+    <link href="manifest.webmanifest" rel="manifest" />
+    <link rel="stylesheet" href="css/bootstrap/bootstrap.min.css" />
+    <link href="css/bootstrap-icons/font/bootstrap-icons.min.css" rel="stylesheet" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
+
+    <link rel="stylesheet" href="_content/Radzen.Blazor/css/material-base.css">
+    <link id="darkThemeLink" rel="" href="_content/Radzen.Blazor/css/dark.css">
+    <link id="lightThemeLink" rel="" href="_content/Radzen.Blazor/css/material-base.css">
+
+    <!--<link href="_content/Toolbelt.Blazor.PWA.Updater/Toolbelt.Blazor.PWA.Updater.bundle.scp.css"
+          rel="stylesheet" />-->
+    <!--<link rel="stylesheet" type="text/css" href="css/app.css?version=0.2">-->
+    <link rel="stylesheet" href="css/app.css" />
+
+    <link href="TechnicalSupport.Client.styles.css" rel="stylesheet" />
+</head>
+
+<body>
+
+    <div id="app">
+        <!-- Splash Screen Component -->
+        <div class="splash-screen">
+            <img src="/images/welcomePage.jpg"
+                 alt="Splash Image"
+                 class="splash-image"
+                 id="" />
+            <div class="loading-text"> Loading...</div>
+        </div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">🗙</a>
+    </div>
+
+    <!--<script>navigator.serviceWorker.register('service-worker.js');</script>-->
+    <!-- 👇 add this script element instead. -->
+    <script src="_content/Microsoft.AspNetCore.Components.WebAssembly.Authentication/AuthenticationService.js"></script>
+    <script src="_content/Toolbelt.Blazor.PWA.Updater.Service/script.min.js"></script>
+
+    <script src="js/downloadfile.js"></script>
+    <script src="js/changedirection.js"></script>
+    <script src="js/jsFunction.js"></script>
+    <script src="js/createcookies.js"></script>
+    <script src="_framework/blazor.webassembly.js"></script>
+    <script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>
+    <script src="https://unpkg.com/@dotlottie/player-component@latest/dist/dotlottie-player.mjs" type="module"></script>
+    <script src="_content/BlazorAnimate/blazorAnimateInterop.js"></script>
+    <script src="js/handleScrollToTop.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/viewerjs@1.11.3/dist/viewer.min.js"></script>
+    <script src="_content/ViewerJsBlazor/interop.js"></script>
+    <script src="js/radzenThemes.js"></script>
+
+    <script>
+        window.downloadFileFromStream = async (fileName, contentStreamReference) => {
+            try {
+                // Using the contentStreamReference correctly
+                const arrayBuffer = await contentStreamReference.arrayBuffer();
+
+                // Create a Blob from the array buffer
+                const blob = new Blob([arrayBuffer]);
+
+                // Create a URL for the Blob
+                const url = URL.createObjectURL(blob);
+
+                // Create an anchor element to simulate the download
+                const anchorElement = document.createElement('a');
+                anchorElement.href = url;
+                anchorElement.download = fileName ?? '';
+
+                // Programmatically click the anchor to trigger the download
+                anchorElement.click();
+
+                // Clean up
+                anchorElement.remove();
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                // Log any errors to the console
+                console.error("Error downloading file:", error);
+            }
+        };
+
+    </script>
+
+    <!-- Download From Url -- Use To Check ssl file trust-->
+    <script>
+        window.triggerFileDownload = (fileName, url) => {
+            const anchorElement = document.createElement('a');
+            anchorElement.href = url;
+            anchorElement.download = fileName ?? '';
+            anchorElement.click();
+            anchorElement.remove();
+        }
+    </script>
+    <script>
+        window.setDirection = (direction) => {
+            document.documentElement.setAttribute('dir', direction)
+        }
+    </script>
+
+</body>
+
+</html>

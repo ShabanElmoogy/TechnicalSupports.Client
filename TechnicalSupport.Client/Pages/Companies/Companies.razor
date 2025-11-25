@@ -1,0 +1,579 @@
+﻿@page "/companies"
+
+@implements IAsyncDisposable
+@inherits StateComponentBase
+@attribute [MustHavePermission(Permissions.ViewCompanies)]
+@using TechnicalSupport.Client.Core.Services.ExportFilesService
+
+<MyMenuBar AddNew="AddCompany"
+           ButtonText="@MyText.addCompany"
+           ExportGrid="ExportGrid"
+           IsGridView="@_isCardView"
+           ToggleView="@ToggleView"
+           SelectedDeleteFilter="@_selectedDeleteFilter"
+           OnDeleteFilterChange="@OnDeleteFilterChange" />
+
+@if (_customLoader)
+{
+    <MyLoader2 LoaderText="@_loaderText" />
+}
+
+@if (_isLoading)
+{
+    <MyLoader />
+}
+else
+{
+    @if (!_isCardView)
+    {
+        <MyGrid GridSource="_companies"
+                SelectedItems="_selectedCompany"
+                TItem="CompanyViewModel"
+                OnGridInitialized="SetGridReference"
+                @ref="_grid"
+                OnEditItem="(e) => EditCompany(e)"
+                OnDeleteItem="(e) => DeleteCompany(e)"
+                RowEvent="(e) => RowEvent(e.Data)"
+                DeletePermission="_canDelete"
+                GridSettingsName="@StorageKeys.CompaniesGridSettings">
+
+            <GridColumns>
+
+                <MyGridColumn TItem="CompanyViewModel"
+                              ColumnName="Id"
+                              Width="110px"
+                              Frozen="true"
+                              TextName="@MyText.id" />
+
+                <MyGridColumn TItem="CompanyViewModel"
+                              ColumnName="@(nameof(CompanyViewModel.NameAr))"
+                              MinWidth="165px"
+                              TextName="@MyText.companyNameAr" />
+
+                <MyGridColumn TItem="CompanyViewModel"
+                              ColumnName="@(nameof(CompanyViewModel.NameEn))"
+                              MinWidth="165px"
+                              TextName="@MyText.companyNameEn" />
+
+                <MyGridColumn TItem="CompanyViewModel"
+                              ColumnName="ServerDetail.Address"
+                              TextName="@MyText.address"
+                              Width="150px" />
+
+                <MyGridColumn TItem="CompanyViewModel"
+                              ColumnName="CreatedOn"
+                              TextName="@MyText.createdOn"
+                              Width="155px"
+                              FormatString="{0:dd/MM/yyyy HH\:mm}" />
+
+                <MyGridColumn TItem="CompanyViewModel"
+                              ColumnName="UpdatedOn"
+                              TextName="@MyText.updatedOn"
+                              Width="155px"
+                              FormatString="{0:dd/MM/yyyy HH\:mm}" />
+
+                <MyToggledColumn TItem="CompanyViewModel"
+                                 ColumnName="IsDeleted"
+                                 Width="115px"
+                                 Condition="@(c => c.IsDeleted)" />
+
+            </GridColumns>
+
+            <ActionButtons Context="company">
+                <RadzenButton ButtonStyle="ButtonStyle.Light"
+                              Icon="@GoogleIcons.Group"
+                              IconColor="@Colors.InfoDark"
+                              Variant="Variant.Flat"
+                              Size="ButtonSize.Medium"
+                              Click="@(async () => NavigateToCompanyUsers(company))"
+                              class="mx-1"
+                              @onclick:stopPropagation="true" />
+
+            </ActionButtons>
+        </MyGrid>
+    }
+    else
+    {
+        <MyMenuBarForCardView Columns="@_columns"
+                              SelectedColumn="@_selectedColumn"
+                              OnSearchTextChanged="@OnSearchChange"
+                              OnSelectedColumnChanged="@SelectedColumnChanged"
+                              OnSelectedSearchTypeChanged="@SelectedSearchTypeChanged"
+                              OnSearch="@SearchCompaniesStatus">
+        </MyMenuBarForCardView>
+
+        <MyCardViewPaging TItem="CompanyViewModel"
+                          Items="_companies"
+                          GetName="@(company => AppCulture == Strings.ar ? company.NameAr : company.NameEn)"
+                          IsDeleted="company => company.IsDeleted"
+                          EditItem="EditCompany"
+                          DeleteItem="DeleteCompany"
+                          DeletePermission="_canDelete"
+                          OnCardClick="RowEvent">
+
+            <CardBody Context="company">
+                <MyCardLabel Label="@MyText.companyNameAr" Content="@company.NameAr" />
+                <MyCardLabel Label="@MyText.companyNameEn" Content="@company.NameEn" />
+                <MyCardLabel Label="@MyText.serverAddress" Content="@company.ServerDetail?.Address" />
+            </CardBody>
+        </MyCardViewPaging>
+    }
+    <Notification @ref="NotificationRef" />
+}
+
+@code {
+
+    #region "Cascading Parameters"
+
+    [CascadingParameter(Name = Strings.CurrentCulture)]
+    public string? AppCulture { get; set; }
+
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthState { get; set; }
+
+    #endregion
+
+    #region "Injects"
+
+    [Inject]
+    private IMainService<CompanyViewModel>? _companyService { get; set; }
+
+
+    [Inject]
+    private IExportFilesService _exportExcel { get; set; }
+
+    [Inject]
+    protected IAuthorizationService _authService { get; set; } = default!;
+
+    #endregion
+
+    #region "Variables"
+
+    private I18nText.MyText MyText = new();
+
+    private Notification NotificationRef = new();
+
+    private bool _isLoading = false;
+
+    private bool _isCardView = true;
+
+    private RadzenDataGrid<CompanyViewModel> _grid;
+
+    private CompanyViewModel _company = new();
+
+    private CompanyViewModel? EditedCompany { get; set; }
+
+    private List<CompanyViewModel> _companies = new();
+
+    private List<CompanyViewModel> _originalCompanies = new();
+
+    private List<CompanyViewModel> _selectedCompany = new();
+
+    private DialogOptions _options = new Radzen.DialogOptions() { Width = "500px", Height = "375px", ShowClose = false };
+
+    private string _searchText = string.Empty;
+
+    private string _selectedColumn = string.Empty;
+
+    private string _selectedSearchType = string.Empty;
+
+    private string _selectedDeleteFilter = Strings.Active;
+
+    private List<DropDownItem> _columns = new();
+
+    private List<DropDownItem> _searchTypes = new();
+
+    private HotKeysContext? _hotKeysContext;
+
+    private HubConnection? _hubConnection { get; set; }
+
+    private bool _customLoader;
+    private string _loaderText = string.Empty;
+
+    private bool _canView;
+    private bool _canEdit;
+    private bool _canDelete;
+    private bool _canCreate;
+
+    #endregion
+
+    #region "LifeCycle Methods"
+
+    protected override async Task OnInitializedAsync()
+    {
+        await InitializeComponentData();
+        await ConnectToCompanyHub();
+    }
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadLocalizedText();
+        InitializeSearchColumn();
+        await ViewSate();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            _hotKeysContext = this.HotKeys.CreateContext().Add(Code.F4, AddCompany);
+    }
+
+    private async Task InitializeComponentData()
+    {
+        _isLoading = true;
+
+        await LoadLocalizedText();
+        await LoadPermissions();
+        await LoadCompanies();
+        SearchCompaniesStatus();
+
+        _isLoading = false;
+    }
+
+    private async Task LoadPermissions()
+    {
+        var user = (await AuthState).User;
+
+        _canView = await _authService.HasPermissionAsync(user, Permissions.ViewCompanies);
+        _canCreate = await _authService.HasPermissionAsync(user, Permissions.CreateCompanies);
+        _canEdit = await _authService.HasPermissionAsync(user, Permissions.EditCompanies);
+        _canDelete = await _authService.HasPermissionAsync(user, Permissions.DeleteCompanies);
+    }
+
+    private async Task ViewSate() => _isCardView = await storageService.GetItemAsync<bool>(Strings.CompanyCardView);
+
+    private async Task LoadLocalizedText() => MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+
+    private void InitializeSearchColumn()
+    {
+        //Because MyText Dont Change Lang Correct After Selected Column Inialize
+        _columns = new List<DropDownItem>
+                    {
+                        new DropDownItem { Text = AppCulture == Strings.ar ? Strings.ArabicNameAr :Strings.ArabicNameEn, Value = Strings.NameAr },
+                        new DropDownItem { Text = AppCulture == Strings.ar ? Strings.EnglishNameAr :Strings.EnglishNameEn, Value = Strings.NameEn }
+                    };
+
+        if (string.IsNullOrEmpty(_selectedColumn) || !_columns.Any(c => c.Value == _selectedColumn))
+        {
+            _selectedColumn = _columns.FirstOrDefault()?.Value ?? string.Empty;
+        }
+
+        StateHasChanged();
+    }
+
+    #endregion
+
+    #region "Events"
+
+    private void RowEvent(CompanyViewModel company)
+    {
+        StateContainer.SharedCompanies = null;
+        StateContainer.SharedCompanies = new List<CompanyViewModel> { company };
+        var companyName = AppCulture == Strings.ar ? company.NameAr : company.NameEn;
+        string targetUrl = $"{InternalRoutes.CompanyTabs}/{company.Id}/{companyName}";
+        NavManager!.NavigateTo(targetUrl);
+    }
+
+    private void SetGridReference(RadzenDataGrid<CompanyViewModel> gridReference)
+    {
+        _grid = gridReference; //Important For Export Grid
+    }
+
+    private void OnSearchChange(string newValue) => _searchText = newValue;
+
+    private void SelectedColumnChanged(string newValue) => _selectedColumn = newValue;
+
+    private void SelectedSearchTypeChanged(string newValue) => _selectedSearchType = newValue;
+
+    #endregion
+
+    #region "CrudOperations"
+
+    private async Task LoadCompanies()
+    {
+        var result = await _companyService!.GetAll($"{ApiRoutes.v1}/{ApiRoutes.Companies.GetAllCompanies}");
+
+        _companies = result ?? new List<CompanyViewModel>();
+        _selectedCompany = new List<CompanyViewModel> { _companies?.LastOrDefault() };
+        _originalCompanies = new List<CompanyViewModel>(_companies);
+    }
+
+    private async Task AddCompany()
+    {
+        var parameters = new Dictionary<string, object>
+                             {
+                                { Strings.OnError, EventCallback.Factory.Create<List<string>>(this, HandleError) },
+                                { Strings.OnSuccess, EventCallback.Factory.Create(this, () => HandleSuccess(false)) }
+                             };
+
+        var result = await dialogService.OpenAsync<CompanyForm>(MyText.addCompany, parameters, _options);
+    }
+
+    private async Task EditCompany(CompanyViewModel company)
+    {
+        var parameters = new Dictionary<string, object>
+            {
+                { Strings.OnError, EventCallback.Factory.Create<List<string>>(this, HandleError) },
+                { Strings.OnSuccess, EventCallback.Factory.Create(this, () => HandleSuccess(true, company)) },
+                { Strings.EditedCompany, company }
+            };
+
+        await dialogService.OpenAsync<CompanyForm>(MyText.editCompany, parameters, _options);
+    }
+
+    private void HandleError(List<string> errors)
+    {
+        foreach (var error in errors)
+            NotificationRef.ShowNotifications(error, Strings.Error, NotificationSeverity.Error);
+    }
+
+    private async Task HandleSuccess(bool isEdit, CompanyViewModel editedCompany = null)
+    {
+        await LoadCompanies();
+        SearchCompaniesStatus();
+
+        if (isEdit && editedCompany != null)
+        {
+
+            isEdit = false;
+
+            var companyName = AppCulture == "" ? editedCompany.NameAr : editedCompany.NameEn;
+
+            StateHasChanged();
+
+            _selectedCompany = new List<CompanyViewModel> { _companies.FirstOrDefault(c => c.Id == editedCompany.Id) };
+
+            if (_isCardView == false)
+                await radzenGridFunction.GoToPageByAsync(_companies, editedCompany, _grid, (c1, c2) => c1.Id == c2.Id);
+
+            NotificationRef.ShowNotifications(MyText.notificationEditSummary, $"{MyText.notificationEditDetail} {companyName} {MyText.successEdit}");
+        }
+        else
+        {
+            var lastCompany = _companies?.LastOrDefault();
+            if (lastCompany != null)
+            {
+                var companyName = AppCulture == Strings.ar ? lastCompany.NameAr : lastCompany.NameEn;
+
+                StateHasChanged();
+
+                _selectedCompany = new List<CompanyViewModel> { lastCompany };
+
+                if (_isCardView == false)
+                    await radzenGridFunction.GoToPageByAsync(_companies, lastCompany, _grid, (c1, c2) => c1.Id == c2.Id);
+
+                NotificationRef.ShowNotifications(MyText.notificationSaveSummary, $"{MyText.notificationSaveDetail} {companyName} {MyText.successSave}");
+            }
+        }
+    }
+
+    #region "Delete Method"
+
+    private async Task DeleteCompany(CompanyViewModel company)
+    {
+        if (!_isCardView)
+        {
+            _customLoader = true;
+            _loaderText = MyText.executing;
+        }
+
+        var deleteName = AppCulture == Strings.ar ? company.NameAr : company.NameEn;
+        var currentIndex = _companies.FindIndex(c => c.Id == company.Id);
+        var previousCompanyId = GetPreviousCompanyId(currentIndex);
+
+        bool? confirmation = await dialogService.Confirm($"{MyText.confirmDelete} {deleteName} ?", MyText.deleteComapny);
+        if (confirmation == true)
+        {
+            await PerformCompanyDeletion(company);
+
+            await UpdateGridAfterCompanyDeletion(currentIndex);
+            await _hubConnection.InvokeAsync(nameof(SignalRMethods.sendcompanyupdatenotification), previousCompanyId);
+
+            _customLoader = false;
+
+        }
+        else
+        {
+            _customLoader = false;
+        }
+    }
+
+    private async Task PerformCompanyDeletion(CompanyViewModel company)
+    {
+        var deleteName = AppCulture == Strings.ar ? company.NameAr : company.NameEn;
+
+        var response = await _companyService!.DeleteRow($"{ApiRoutes.v1}/{ApiRoutes.Companies.DeleteCompany}/{company.Id}");
+        if (response.Success)
+        {
+            await LoadCompanies();
+            SearchCompaniesStatus();
+            NotificationRef.ShowNotifications(MyText.deletedSuccessfully, $"{deleteName} {MyText.deletedSuccessfully}");
+            StateHasChanged();
+        }
+        else
+        {
+            var errorMessages = response.ErrorResponse.Errors.Values.SelectMany(list => list).ToList();
+            NotificationRef.ShowNotifications(MyText.error, string.Join(Environment.NewLine, errorMessages), NotificationSeverity.Error, 5000);
+        }
+    }
+
+    private async Task UpdateGridAfterCompanyDeletion(int currentIndex)
+    {
+        if (!_isCardView)
+        {
+            var targetCompany = GetTargetCompanyAfterDeletion(currentIndex);
+
+            if (targetCompany != null)
+            {
+                _selectedCompany = new List<CompanyViewModel> { targetCompany };
+                await _grid.Reload();
+                await radzenGridFunction.GoToPageByAsync(_companies, targetCompany, _grid, (c1, c2) => c1.Id == c2.Id);
+            }
+        }
+    }
+
+    private CompanyViewModel? GetTargetCompanyAfterDeletion(int currentIndex)
+    {
+        if (currentIndex >= _companies.Count)
+        {
+            currentIndex = _companies.Count - 1;
+        }
+
+        return currentIndex > 0
+            ? _companies.ElementAtOrDefault(currentIndex - 1) // Previous row
+            : _companies.FirstOrDefault(); // First row
+    }
+
+    private int GetPreviousCompanyId(int currentIndex)
+    {
+        if (currentIndex > 0 && currentIndex - 1 < _companies.Count)
+        {
+            return _companies[currentIndex - 1].Id;
+        }
+
+        return 0; // Return null if there's no valid previous record
+    }
+
+
+    #endregion
+
+    #endregion
+
+    #region "Helper Methods"
+
+    private async Task ConnectToCompanyHub()
+    {
+        var apiAddress = Configuration.GetValue<string>(Strings.MainApiAddress);
+        _hubConnection = new HubConnectionBuilder()
+           .WithUrl($"{apiAddress}{SignalRRoutes.CompanyHub}")
+           .Build();
+
+        await _hubConnection.StartAsync();
+    }
+
+    private void NavigateToCompanyUsers(CompanyViewModel company)
+    {
+        StateContainer.SharedCompanies = new List<CompanyViewModel> { company };
+
+        string companyName = AppCulture == Strings.ar ? company.NameAr : company.NameEn;
+        string targetUrl = $"{InternalRoutes.CompanyTabs}/{company.Id}/{companyName}";
+        NavManager!.NavigateTo(targetUrl);
+    }
+
+    private void ToggleView()
+    {
+        _isCardView = !_isCardView;
+        storageService.SetItemAsync(Strings.CompanyCardView, _isCardView);
+    }
+
+    private void SearchCompaniesStatus()
+    {
+        _companies = GlobalFunctions.SearchEntitiesStatus(
+                     _originalCompanies,
+                     _searchText,
+                     _selectedColumn,
+                     _selectedSearchType,
+                     _selectedDeleteFilter,
+                     c => c.IsDeleted);
+    }
+
+    private void OnDeleteFilterChange(object value)
+    {
+        _selectedDeleteFilter = value.ToString();
+        SearchCompaniesStatus();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hotKeysContext != null)
+            await _hotKeysContext.DisposeAsync();
+
+        if (_hubConnection != null)
+        {
+            await _hubConnection.StopAsync();
+            await _hubConnection.DisposeAsync();
+        }
+    }
+
+    #endregion
+
+    #region "Export Methods"
+
+    private async Task ExportGrid(ExportType exportType)
+    {
+        _customLoader = true;
+        _loaderText = MyText.executing;
+
+        if (_companies != null && _companies.Any())
+        {
+            List<CompanyExportModel> exportData = new();
+            List<Dictionary<string, object>> formattedExportData = new();
+            var ServerDetail = "ServerDetail.Address";
+
+            //TODO : Refactor => Add Custom Dictionary For Csv
+            Dictionary<string, string> columnTitles = new Dictionary<string, string>
+            {
+                { nameof(CompanyViewModel.Id), MyText.id },
+                { nameof(CompanyViewModel.NameAr), MyText.companyNameAr },
+                { nameof(CompanyViewModel.NameEn), MyText.companyNameEn },
+                { nameof(CompanyViewModel.CreatedOn), MyText.createdon },
+                { nameof(CompanyViewModel.UpdatedOn), MyText.updatedOn },
+                { ServerDetail, MyText.address }
+            };
+
+            if (!_isCardView)
+            {
+                var pickedColumns = _grid.ColumnsCollection
+                                        .Where(c => c.Pickable && c.Visible)
+                                        .Select(c => c.Property);
+
+                if (!string.IsNullOrEmpty(_grid.Query.Filter))
+                {
+                    var query = _grid.Query.Filter;
+                    var filteredCompanies = _companies.AsQueryable().Where(query).ToList();
+
+                    exportData = mapper.Map<List<CompanyExportModel>>(filteredCompanies).ToList();
+                }
+                else
+                {
+                    exportData = mapper.Map<List<CompanyExportModel>>(_companies).ToList();
+                }
+
+                var nestedPropertyNames = new List<string> { ServerDetail };
+                formattedExportData = exportHelper.ConvertToDictionary(exportData, columnTitles, nestedPropertyNames);
+            }
+            else
+            {
+                exportData = mapper.Map<List<CompanyExportModel>>(_companies).ToList();
+
+                var nestedPropertyNames = new List<string> { ServerDetail };
+                formattedExportData = exportHelper.ConvertToDictionary(exportData, columnTitles, nestedPropertyNames);
+            }
+
+            await exportListService.ExportAsync(exportType, formattedExportData, Strings.Companies, MyText.pdfCompanyTitle, AppCulture);
+        }
+
+        _customLoader = false;
+    }
+
+    #endregion
+}

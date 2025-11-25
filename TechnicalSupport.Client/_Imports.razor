@@ -1,0 +1,85 @@
+﻿@using System.Text
+@using System.Net.Http
+@using System.Text.Json
+@using System.Diagnostics
+@using System.Net.Http.Json
+@using System.Globalization
+@using System.Net.Http.Headers
+@using System.Linq.Dynamic.Core
+
+@using Microsoft.JSInterop
+@using Microsoft.Extensions.Options;
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.SignalR.Client
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.WebAssembly.Http
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+
+@using TechnicalSupport.Client
+@using TechnicalSupport.Client.Components.DashBoard
+@using TechnicalSupport.Client.Layout
+@using TechnicalSupport.Client.Helpers
+@using TechnicalSupport.Client.Resources
+@using TechnicalSupport.Client.Components
+@using TechnicalSupport.Client.Identity.Pages
+@using TechnicalSupport.Client.Identity.Layout
+@using TechnicalSupport.Client.Pages.CompanyUsers
+@using TechnicalSupport.Client.ViewModels;
+@using TechnicalSupport.Client.ViewModels.Companies
+@using TechnicalSupport.Client.ViewModels.UploadFiles
+@using TechnicalSupport.Client.ViewModels.CompanyUsers
+@using TechnicalSupport.Client.ViewModels.ServersAddress
+@using TechnicalSupport.Client.Core.StateManagement.CascadingValues;
+@using TechnicalSupport.Client.Core
+@using TechnicalSupport.Client.Core.Const
+@using TechnicalSupport.Client.Core.Extensions
+@using TechnicalSupport.Client.Core.StateManagement
+@using TechnicalSupport.Client.Core.Services.AccountService
+@using TechnicalSupport.Client.Core.Services.CustomServices
+@using TechnicalSupport.Client.Core.Services.LocalStorageService
+@using TechnicalSupport.Client.Core.Services.LocalizationService
+@using TechnicalSupport.Client.Core.StateManagement.StateContainer
+@using TechnicalSupport.Client.Core.Services;
+@using TechnicalSupport.Client.ViewModels.Roles
+@using TechnicalSupport.Client.ViewModels.Monitor
+@using TechnicalSupport.Client.Core.Services.MainServices
+@using TechnicalSupport.Client.Core.Services.FileService
+@using NetcodeHub.Packages.Components.FileUpload
+@using OfficeOpenXml
+
+@using Radzen
+@using BlazorAnimate
+@using MapsterMapper
+@using Radzen.Blazor
+@using Force.DeepCloner
+@using Blazored.LocalStorage
+@using Toolbelt.Blazor.HotKeys2
+
+@inject IMapper mapper
+@inject IJSRuntime jsRuntime
+@inject IConfiguration Configuration
+@inject IFileService fileService
+@inject IStorageService storageService
+@inject IHttpClientFactory HttpClientFactory
+
+@inject HotKeys HotKeys
+@inject ExportHelper exportHelper
+@inject PhotoService PhotoService
+@inject ILocalStorageService localStorage
+@inject RadzenGridFunction radzenGridFunction
+@inject Radzen.DialogService dialogService
+@inject CultureService CultureService
+@inject NavigationManager NavManager
+@inject UserInfoService _userInfoService
+@inject TooltipService tooltipService
+@inject ExportListService exportListService
+@inject CookieThemeService CookieThemeService
+@inject NotificationService notificationService
+@inject Toolbelt.Blazor.I18nText.I18nText I18nText
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject GlobalFunctions GlobalFunctions
+

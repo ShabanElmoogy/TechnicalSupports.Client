@@ -1,0 +1,38 @@
+﻿@layout LoginLayout
+@inherits LayoutComponentBase
+
+<RadzenStack>
+    <RadzenStack>
+        <RadzenRow JustifyContent="JustifyContent.SpaceBetween" 
+                   AlignItems="AlignItems.Center" 
+                   Style="height: 100%" 
+                   class="scroll-reset">
+
+            <div class="col-md-8 col-lg-6 col-xl-4 offset-xl-1">
+                @Body
+            </div>
+
+            <div class="col-md-9 col-lg-6 col-xl-5 d-none d-lg-block">
+                <img src="images/splashscreen.jpg"
+                     class="img-fluid"                 
+                     alt="Sample image">
+            </div>
+
+        </RadzenRow>
+
+    </RadzenStack>
+</RadzenStack>
+
+@code {
+    private bool Rtl { get; set; }
+
+    private string Dir => Rtl ? Strings.rtl : Strings.ltr;
+
+    //To Avoid Error When Assign Value For ScrollToTop = 0
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await jsRuntime.InvokeVoidAsync(JsFunctions.ResetScrollTops);
+    }
+
+}

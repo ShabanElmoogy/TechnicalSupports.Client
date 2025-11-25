@@ -1,0 +1,49 @@
+﻿<RadzenColumn SizeXS="12" SizeMD="3">
+    <RadzenDropDown @bind-Value="SelectedDeleteFilter"
+                    Data="@_status"
+                    TextProperty="Text"
+                    ValueProperty="Value"
+                    Change="OnDeleteFilterChange"
+                    Style="width:100%;"
+                    Visible="ShowDropDownStatus" />
+</RadzenColumn>
+
+@code {
+
+    #region Parameters
+
+    [Parameter]
+    public bool ShowDropDownStatus { get; set; } = true;
+
+    [Parameter]
+    public string SelectedDeleteFilter { get; set; }
+
+    [Parameter]
+    public EventCallback<object> OnDeleteFilterChange { get; set; }
+
+    #endregion
+
+    #region Variables
+
+    private I18nText.MyText MyText = new();
+
+    private List<DropDownItem> _status;
+
+    #endregion
+
+    #region Lifecycle methods
+
+    protected async override Task OnInitializedAsync()
+    {
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+
+        _status = new List<DropDownItem>
+        {
+            new DropDownItem { Text = MyText.all, Value = Strings.All },
+            new DropDownItem { Text = MyText.active, Value = Strings.Active },
+            new DropDownItem { Text = MyText.deleted, Value = Strings.Deleted }
+        };
+    }
+
+    #endregion
+}

@@ -1,0 +1,246 @@
+﻿@implements IAsyncDisposable
+
+<RadzenCard>
+    <RadzenTemplateForm TItem="CompanyViewModel" Data=@_company Submit="@SaveCompany">
+
+        <RadzenFormField Text="@MyText.companyNameAr" Style="width: 100%">
+            <RadzenTextBox MaxLength="50"
+                           Name="@nameof(CompanyViewModel.NameAr)"
+                           AutoCompleteType="AutoCompleteType.Off"
+                           @ref="txtFocus"
+                           @bind-Value="@_company.NameAr" />
+        </RadzenFormField>
+        <RadzenRequiredValidator Component="@nameof(CompanyViewModel.NameAr)" Text="@MyText.requiredField" />
+        <RadzenRegexValidator Component="@nameof(CompanyViewModel.NameAr)"
+                              Text="@MyText.arabicPAttern"
+                              Pattern="@RegexPatterns.CharactersOnly_Ar" />
+
+        <RadzenFormField Text="@MyText.companyNameEn" Style="width: 100%">
+            <RadzenTextBox MaxLength="50"
+                           Name="@nameof(CompanyViewModel.NameEn)"
+                           AutoCompleteType="AutoCompleteType.Off"
+                           @bind-Value="@_company.NameEn" />
+        </RadzenFormField>
+        <RadzenRequiredValidator Component="@nameof(CompanyViewModel.NameEn)" Text="@MyText.requiredField" />
+        <RadzenRegexValidator Component="@nameof(CompanyViewModel.NameEn)"
+                              Text="@MyText.englishPAttern"
+                              Pattern="@RegexPatterns.CharactersOnly_Eng" />
+
+        <RadzenFormField Text="@MyText.serverAddress" Style="width: 100%;">
+            <RadzenDropDown Data="_serversAddresses"
+                            Name="@nameof(CompanyViewModel.ServerAddressId)"
+                            TValue="int?"
+                            AllowFiltering="true"
+                            AllowClear="true"
+                            AllowVirtualization="true"
+                            ClearSearchAfterSelection="true"
+                            TextProperty="Address"
+                            ValueProperty="Id"
+                            Placeholder="@MyText.selectServer"
+                            Count="@_serversAddresses.Count"
+                            MouseEnter="LoadServersAddresses"
+                            @bind-Value="@_company.ServerAddressId">
+            </RadzenDropDown>
+        </RadzenFormField>
+       
+        <RadzenRow JustifyContent="JustifyContent.End" Style="margin-top: 10px;">
+
+            <RadzenButton ButtonType="ButtonType.Submit"
+                          Size="ButtonSize.Small"
+                          IsBusy="@_isBusy"
+                          BusyText="@MyText.submitting"
+                          Text="@MyText.save">
+            </RadzenButton>
+
+            <RadzenButton ButtonType="ButtonType.Button"
+                          Size="ButtonSize.Small"
+                          Click="CloseDialog">
+                @MyText.close
+            </RadzenButton>
+
+        </RadzenRow>
+    </RadzenTemplateForm>
+</RadzenCard>
+
+@code {
+
+    #region "Cascading Parameters"
+
+    [CascadingParameter(Name = Strings.CurrentCulture)]
+    public string? AppCulture { get; set; }
+
+    #endregion
+
+    #region "Injects"
+
+    [Inject]
+    private IMainService<CompanyViewModel>? _companyService { get; set; }
+
+    [Inject]
+    private IMainService<ServersAddressViewModel>? _serverService { get; set; }
+
+    #endregion
+
+    #region Parameters
+
+    [Parameter]
+    public int? Id { get; set; }
+
+    [Parameter]
+    public CompanyViewModel? EditedCompany { get; set; }
+
+    [Parameter]
+    public EventCallback<List<string>> OnError { get; set; }
+
+    [Parameter]
+    public EventCallback OnSuccess { get; set; }
+
+    #endregion
+
+    #region "Variables"
+
+    private string? _currentCulture { get; set; }
+
+    private RadzenTextBox? txtFocus { get; set; }
+
+    private I18nText.MyText MyText = new();
+
+    private bool _isBusy { get; set; }
+
+    private List<ServersAddressViewModel> _serversAddresses { get; set; } = new();
+
+    public CompanyViewModel _company { get; set; } = new();
+
+    private CompanyViewModel _originalCompany = new();
+
+    private HubConnection? _hubConnection { get; set; }
+
+    #endregion
+
+    #region "LifeCycle Methods"
+
+    protected async override Task OnInitializedAsync()
+    {
+        await IntializeCulture();
+        IntializeEditedCompany();
+        await ConnectToCompanyHub();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await txtFocus.FocusAsync();
+    }
+
+    #endregion
+
+    #region "Methods"
+
+    private async Task LoadServersAddresses()
+    {
+        var result = await _serverService!.GetAll($"{ApiRoutes.v1}/{ApiRoutes.ServersAddress.GetAllServersAddress}");
+        _serversAddresses = result.Where(x => !x.IsDeleted).ToList();
+    }
+
+    private async Task IntializeCulture()
+    {
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+    }
+
+    private async Task ConnectToCompanyHub()
+    {
+        var apiAddress = Configuration.GetValue<string>(Strings.MainApiAddress);
+        _hubConnection = new HubConnectionBuilder()
+           .WithUrl($"{apiAddress}{SignalRRoutes.CompanyHub}")
+           .Build();
+
+        await _hubConnection.StartAsync();
+    }
+
+    private void IntializeEditedCompany()
+    {
+        if (EditedCompany?.Id > 0)
+        {
+            _company = EditedCompany;
+            _originalCompany = EditedCompany.DeepClone();
+        }
+        else
+        {
+            _company = new CompanyViewModel();
+        }
+    }
+
+    #endregion
+
+    #region CrudOperations
+
+    private async Task SaveCompany()
+    {
+        _isBusy = true;
+        try
+        {
+            if (_company.Id > 0)
+            {
+                var response = await _companyService!.UpdateRow(_company, $"{ApiRoutes.v1}/{ApiRoutes.Companies.UpdateCompany}");
+                if (response.Success)
+                {
+                    await OnSuccess.InvokeAsync();
+                    await _hubConnection.InvokeAsync(nameof(SignalRMethods.sendcompanyupdatenotification), _company.Id);
+                    dialogService.Close(true);
+                }
+                else
+                {
+                    await OnError.InvokeAsync(response.ErrorResponse.Errors.Values.SelectMany(list => list).ToList());
+                }
+            }
+            else
+            {
+                var response = await _companyService!.AddNewRow(_company, $"{ApiRoutes.v1}/{ApiRoutes.Companies.AddCompany}");
+                if (response.Success)
+                {
+                    await OnSuccess.InvokeAsync();
+                    // await _hubConnection.InvokeAsync(nameof(SignalRMethods.sendcompanyupdatenotification),0);
+                    dialogService.Close(true);
+                }
+                else
+                {
+                    await OnError.InvokeAsync(response.ErrorResponse.Errors.Values.SelectMany(list => list).ToList());
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await OnError.InvokeAsync(new List<string> { { ex.Message } });
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    #endregion
+
+    #region Events
+
+    private async Task OnMouseEnter() => await LoadServersAddresses();
+
+    private void CloseDialog()
+    {
+        if (_isBusy)
+            return;
+
+        _originalCompany.DeepCloneTo(_company);
+
+        dialogService.Close(false);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection != null)
+        {
+            await _hubConnection.StopAsync();
+            await _hubConnection.DisposeAsync();
+        }
+    }
+    #endregion
+}

@@ -1,0 +1,188 @@
+﻿@page "/companies-signalr"
+
+@implements IAsyncDisposable
+
+@if (isLoading)
+{
+    <MyLoader />
+}
+else
+{
+    <Animate Animation="Animations.FlipRight"
+             Easing="Easings.EaseInBack"
+             Duration="TimeSpan.FromSeconds(0.5)"
+             Delay="TimeSpan.FromSeconds(1)">
+
+        <MyGrid GridSource="companies"
+                TItem="CompanyViewModel"
+                SelectedItems="_selectedCompany"
+                ShowActionButtons=false
+                OnGridInitialized="SetGridReference"
+                GridSettingsName="CompaniesBroadCastingGridSettings"
+                @ref="dataGrid">
+
+            <GridColumns>
+
+                <MyGridColumn TItem="CompanyViewModel"
+                              ColumnName="Id"
+                              Width="100px"
+                              Frozen="true"
+                              TextName="@MyText.id" />
+
+                <MyGridColumn TItem="CompanyViewModel"
+                              ColumnName="@(nameof(CompanyViewModel.NameAr))"
+                              MinWidth="165px"
+                              TextName="@MyText.companyNameAr" />
+
+                <MyGridColumn TItem="CompanyViewModel"
+                              ColumnName="@(nameof(CompanyViewModel.NameEn))"
+                              MinWidth="165px"
+                              TextName="@MyText.companyNameEn" />
+
+                <MyGridColumn TItem="CompanyViewModel"
+                              ColumnName="ServerDetail.Address"
+                              TextName="@MyText.address"
+                              Width="150px" />
+
+            </GridColumns>
+
+        </MyGrid>
+
+    </Animate>
+
+    <Notification @ref="NotificationRef" />
+}
+
+@code {
+
+    [CascadingParameter(Name = Strings.CurrentCulture)]
+    public string AppCulture { get; set; }
+
+    private void SetGridReference(RadzenDataGrid<CompanyViewModel> gridReference)
+    {
+        dataGrid = gridReference;
+    }
+
+    private HubConnection? _hubConnection;
+
+    private int currenteditedCompanyId;
+
+    private bool isLoading;
+
+    private Notification NotificationRef;
+
+    private List<CompanyViewModel> companies = new List<CompanyViewModel>();
+
+    private IList<CompanyViewModel> _selectedCompany = new List<CompanyViewModel>();
+
+    private RadzenDataGrid<CompanyViewModel> dataGrid;
+
+    private I18nText.MyText MyText = new();
+
+    [Inject]
+    private IMainService<CompanyViewModel>? _CompanyService { get; set; }
+
+    private async Task LoadCompanies()
+    {
+        isLoading = true;
+
+        var result = await _CompanyService!.GetAll($"{ApiRoutes.v1}/{ApiRoutes.Companies.GetAllCompanies}");
+
+        companies = result ?? new List<CompanyViewModel>();
+
+        if (currenteditedCompanyId > 0)
+        {
+            _selectedCompany = new List<CompanyViewModel> { companies.FirstOrDefault(c => c.Id == currenteditedCompanyId) };
+        }
+        else
+        {
+            _selectedCompany = new List<CompanyViewModel> { companies?.LastOrDefault() };
+        }
+
+        isLoading = false;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Initial load of companies
+        await LoadCompanies();
+
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+
+        var apiAddress = Configuration.GetValue<string>(Strings.MainApiAddress);
+
+        // Connect to SignalR Hub
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl($"{apiAddress}{SignalRRoutes.CompanyHub}")
+            .Build();
+
+        // Define callback for receiving company updates via SignalR
+        _hubConnection.On<int>(nameof(SignalRMethods.ReceiveCompanyUpdate), async (editedCompanyId) =>
+        {
+            currenteditedCompanyId = editedCompanyId;
+
+            await InvokeAsync(async () =>
+            {
+                // Reload companies after update
+                await LoadCompanies();
+
+
+                StateHasChanged();
+                NotificationRef.ShowNotifications(MyText.companyUpdated, MyText.companyListUpdated, NotificationSeverity.Success);
+            });
+
+            if (editedCompanyId > 0)
+            {
+                await NavigateToPageOfEditedCompany(editedCompanyId);
+
+            }
+            else
+            {
+                var pagesize = dataGrid.PageSize;
+                var count = dataGrid.Count;
+                var lastpage = (int)Math.Ceiling((double)count / pagesize);
+
+                await dataGrid.GoToPage(lastpage);
+            }
+        });
+
+        // Start the SignalR connection
+        await _hubConnection.StartAsync();
+    }
+
+    private async Task NavigateToPageOfEditedCompany(int editedCompanyId)
+    {
+        if (dataGrid == null || companies == null || !companies.Any())
+            return;
+
+        // Find the index of the edited company
+        var companyIndex = companies.FindIndex(c => c.Id == editedCompanyId);
+
+        if (companyIndex >= 0)
+        {
+            // Calculate the page number
+            var pageSize = dataGrid.PageSize;
+            var pageIndex = companyIndex / pageSize;
+
+            // Navigate to the calculated page
+            await dataGrid.GoToPage(pageIndex);
+
+            // Optionally, highlight the company
+            _selectedCompany = new List<CompanyViewModel> { companies[companyIndex] };
+            await InvokeAsync(StateHasChanged);
+        }
+        else
+        {
+            NotificationRef.ShowNotifications(MyText.companyNotFound, MyText.editedCompanyNotFound, NotificationSeverity.Warning);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection != null)
+        {
+            await _hubConnection.StopAsync();
+            await _hubConnection.DisposeAsync();
+        }
+    }
+}

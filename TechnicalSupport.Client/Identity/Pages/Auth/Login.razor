@@ -1,0 +1,281 @@
+﻿@page "/auth/login"
+
+@attribute [AllowAnonymous]
+@layout CentralCardLayout
+
+<PageTitle>Login</PageTitle>
+
+<RadzenCard>
+
+    <RadzenTemplateForm TItem="LoginRequest" Data=@_loginDto Submit="@LoginUser">
+
+        <RadzenRow JustifyContent="JustifyContent.Center" AlignItems="AlignItems.Center" Gap="3">
+            <RadzenColumn SizeSM="12" SizeMD="3" class="text-center">
+                <RadzenLabel class="fs-6 fw-bold ">@MyText.enterLogin</RadzenLabel>
+            </RadzenColumn>
+            <RadzenColumn Size="2">
+                <RadzenButton>
+                    <i class="bi bi-google"></i>
+                </RadzenButton>
+            </RadzenColumn>
+            <RadzenColumn Size="2">
+                <RadzenButton>
+                    <i class="bi bi-twitter"></i>
+                </RadzenButton>
+            </RadzenColumn>
+            <RadzenColumn Size="2">
+                <RadzenButton>
+                    <i class="bi bi-linkedin"></i>
+                </RadzenButton>
+            </RadzenColumn>
+        </RadzenRow>
+
+        <MyDivider/>
+
+        @if (_isloginError)
+        {
+            <MyAlertError Errors="_errors" />
+        }
+
+        <RadzenColumn>
+
+            <RadzenFormField Text="@MyText.userNameOrEmail" Style="width: 100%;">
+                <RadzenTextBox Name="@nameof(LoginRequest.UserName)"
+                               AutoCompleteType="AutoCompleteType.Off"
+                               MaxLength="50"
+                               @ref="_txtFocus"
+                               @bind-Value="@_loginDto.UserName" />
+            </RadzenFormField>
+            <RadzenRequiredValidator Component="@nameof(LoginRequest.UserName)" Text="@MyText.requiredField" />
+
+
+            <RadzenFormField Text="@MyText.password" Style="width: 100%;">
+                <ChildContent>
+                    <RadzenTextBox Name="PassWordTextBoxShow"
+                                   @bind-Value="@_loginDto.PassWord"
+                                   AutoCompleteType="AutoCompleteType.Off"                                   
+                                   Visible="@(!_password)" />
+                    <RadzenPassword Name="PassWordTextBoxHidden"
+                                    @bind-Value="@_loginDto.PassWord"
+                                    AutoCompleteType="AutoCompleteType.Off"
+                                    Visible="@_password" />                                  
+                </ChildContent>
+                <End>
+                    <RadzenButton Icon="@(_password ? GoogleIcons.Visibility : GoogleIcons.VisibilityOff)"
+                                  Click="TogglePassword"
+                                  Variant="Variant.Text"
+                                  Size="ButtonSize.Small" />
+                </End>
+            </RadzenFormField>
+            <!-- Validator for TextBox -->
+            <RadzenRequiredValidator Component="PassWordTextBoxShow"
+                                     Text="@MyText.requiredField"
+                                     Visible="@(!_password)" />
+
+            <!-- Validator for PasswordBox -->
+            <RadzenRequiredValidator Component="PassWordTextBoxHidden"
+                                     Text="@MyText.requiredField"
+                                     Visible="@_password" />
+
+        </RadzenColumn>
+
+        <RadzenStack JustifyContent="JustifyContent.SpaceBetween"
+                     AlignItems="AlignItems.Center"
+                     Orientation="Orientation.Horizontal"
+                     Style="margin-top: 10px;">
+
+            <RadzenColumn>
+                <RadzenCheckBox Value=@_rememberMe
+                                Name="ChkRememberMe"
+                                TValue="bool"
+                                ValueChanged="CheckBoxChanged" />
+                <RadzenLabel Text="@MyText.remeberMe" Component="ChkRememberMe" />
+            </RadzenColumn>
+
+            <RadzenColumn>
+                <RadzenLink Path="@InternalRoutes.ForgetPassword" Text="@MyText.forgotPassword" Style="font-weight:bold" />
+            </RadzenColumn>
+        </RadzenStack>
+
+        <RadzenStack>
+
+            <RadzenButton Icon="@GoogleIcons.Login"
+                          ButtonType="ButtonType.Submit"
+                          Style="margin-top: 20px;"
+                          IsBusy="@_isBusy"
+                          BusyText="@MyText.submitting"
+                          Text="@MyText.login" />
+
+            <RadzenButton Icon="@GoogleIcons.Login"
+                          Click="LoginAsAdmin"
+                          Style="margin-top: 20px;"
+                          IsBusy="@_isBusy"
+                          BusyText="@MyText.submitting"
+                          Text="@MyText.loginAsAdmin" />
+
+            <RadzenButton Icon="@GoogleIcons.Login"
+                          Click="LoginAsUser"
+                          Style="margin-top: 20px;"
+                          IsBusy="@_isBusy"
+                          BusyText="@MyText.submitting"
+                          Text="@MyText.loginAsUser" />
+
+            <RadzenLabel>
+                @MyText.dontHaveAccount
+                <RadzenLink Path="@InternalRoutes.Register"
+                            Style="font-weight:bold">
+                    @MyText.register
+                </RadzenLink>
+            </RadzenLabel>
+        </RadzenStack>
+
+    </RadzenTemplateForm>
+</RadzenCard>
+
+<Notification @ref="_notificationRef" />
+
+
+<style>
+    .divider:after,
+    .divider:before {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: #eee;
+    }
+</style>
+
+@code {
+
+    #region Injects
+
+    [Inject]
+    public IAuthenticationServiceFactory _authenticationService { get; set; }
+
+    #endregion
+
+    #region Parameters
+
+    [Parameter]
+    public bool _rememberMe { get; set; }
+
+    [CascadingParameter]
+    public Task<AuthenticationState>? AuthState { get; set; }
+
+    [SupplyParameterFromQuery(Name = "Return-Url")]
+    private string? ReturnUrl { get; set; }
+
+    #endregion
+
+    #region LifeCycleMethods
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState;
+        var user = authState.User;
+        if (user.Identity!.IsAuthenticated)
+        {
+            NavManager.NavigateTo(GetReturnUrlOrDefault(), forceLoad: true);
+        }
+
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+    }
+
+    #endregion
+
+    #region Variables
+
+    private bool _password = true;
+
+    private bool _isBusy;
+
+    private LoginRequest _loginDto = new();
+
+    private bool _isloginError { get; set; }
+
+    private List<string> _errors = new();
+
+    private I18nText.MyText MyText = new I18nText.MyText();
+
+    private Notification? _notificationRef;
+
+    private RadzenTextBox? _txtFocus;
+
+    #endregion
+
+    #region LifeCycleMethods
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await _txtFocus.FocusAsync();
+    }
+
+    #endregion
+
+    #region Methods
+
+    private string GetReturnUrlOrDefault()
+    {
+        if (!string.IsNullOrWhiteSpace(ReturnUrl))
+        {
+            var decoded = Uri.UnescapeDataString(ReturnUrl);
+            if (Uri.IsWellFormedUriString(decoded, UriKind.Relative))
+            {
+                return decoded;
+            }
+        }
+        return "/";
+    }
+
+    private void CheckBoxChanged() => _rememberMe = !_rememberMe;
+
+    void TogglePassword() => _password = !_password;
+
+    private void Register() => NavManager.NavigateTo(InternalRoutes.Register);
+
+    private async Task LoginUser()
+    {
+        try
+        {
+            _isBusy = true;
+            _isloginError = false;
+            _loginDto.RememberMe = _rememberMe;
+            var result = await _authenticationService!.Login(_loginDto);
+            if (!result.Success)
+            {
+                _errors = [];
+                _isloginError = true;
+                var errorMessages = result.ErrorResponse.Errors.Values.SelectMany(list => list);
+                _errors.AddRange(errorMessages);
+                _isBusy = false;
+            }
+            else
+            {
+                NavManager.NavigateTo(GetReturnUrlOrDefault(), forceLoad: true);
+                _isBusy = false;
+            }
+        }
+        catch
+        {
+            _notificationRef.ShowNotifications(MyText.loginFailed, MyText.checkInternetConnection, NotificationSeverity.Error);
+            _isBusy = false;
+        }
+    }
+
+    private async Task LoginAsAdmin()
+    {
+        _loginDto.UserName = "admin";
+        _loginDto.PassWord = "P@ssword123";
+        await LoginUser();
+    }
+
+    private async Task LoginAsUser()
+    {
+        _loginDto.UserName = "user";
+        _loginDto.PassWord = "P@ssword123";
+        await LoginUser();
+    }
+
+    #endregion
+}

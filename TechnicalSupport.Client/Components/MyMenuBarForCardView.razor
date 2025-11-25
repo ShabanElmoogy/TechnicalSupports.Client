@@ -1,0 +1,175 @@
+﻿<Animate Animation="Animations.SlideLeft"
+         Easing="Easings.EaseInBack"
+         Duration="TimeSpan.FromSeconds(0.5)"
+         Delay="TimeSpan.FromSeconds(1)">
+
+    <RadzenCard class="rz-border-radius-2 rz-shadow-4 rz-mb-3">
+        <RadzenRow>
+            <!-- Column for selecting search column -->
+            <RadzenColumn SizeXS="12" SizeMD="3" Visible="ShowSearchColumns">
+                <RadzenDropDown @bind-Value="SelectedColumn"
+                                Data="Columns"
+                                TextProperty="Text"
+                                ValueProperty="Value"
+                                Placeholder="@MyText.selectColumn"
+                                Style="width:100%" />
+            </RadzenColumn>
+
+            <!-- Column for selecting search type -->
+            <RadzenColumn SizeXS="12" SizeMD="3">
+                <RadzenDropDown @bind-Value="SelectedSearchType"
+                                Data="SearchTypes"
+                                TextProperty="Text"
+                                ValueProperty="Value"
+                                Placeholder="@MyText.searchType"
+                                Style="width:100%" />
+            </RadzenColumn>
+
+            <!-- Column for the search text box -->
+            <RadzenColumn SizeXS="12" SizeMD="4">
+                <MyClearButton ClearTextBox="@ClearTextBox">
+                    <TextBox>
+                        <RadzenTextBox Placeholder="@($"{MyText.search} ...")"
+                                       @bind-Value="searchText"
+                                       Change="@(args => OnSearchTextChanged.InvokeAsync(args))"
+                                       Style="width: 100%; padding-right: 30px;" />
+                    </TextBox>
+                </MyClearButton>
+            </RadzenColumn>
+
+            <!-- Column for the search button -->
+            <RadzenColumn SizeXS="12" SizeMD="2">
+                <RadzenButton Text="@MyText.search"
+                              Click="OnSearch"
+                              ButtonStyle="ButtonStyle.Primary"
+                              Style="width:100%" />
+            </RadzenColumn>
+        </RadzenRow>
+    </RadzenCard>
+
+</Animate>
+
+@code {
+
+    @code {
+
+        #region Cascading Parameters
+
+        [CascadingParameter(Name = Strings.CurrentCulture)]
+        public string? appCulture { get; set; }
+
+        #endregion
+
+        #region Parameters
+
+        [Parameter]
+        public bool ShowSearchColumns { get; set; } = true;
+
+        [Parameter]
+        public EventCallback<string> OnSelectedColumnChanged { get; set; }
+
+        [Parameter]
+        public EventCallback<string> OnSearchTextChanged { get; set; }
+
+        [Parameter]
+        public EventCallback<string> OnSelectedSearchTypeChanged { get; set; }
+
+        [Parameter]
+        public List<DropDownItem> Columns { get; set; } = new();
+
+        [Parameter]
+        public EventCallback OnSearch { get; set; }
+
+        private string selectedColumn;
+
+        [Parameter]
+        public string SelectedColumn
+        {
+            get => selectedColumn;
+            set
+            {
+                if (selectedColumn != value)
+                {
+                    selectedColumn = value;
+                    OnSelectedColumnChanged.InvokeAsync(value);
+                }
+            }
+        }
+
+        [Parameter]
+        public string SelectedSearchType
+        {
+            get => selectedSearchType;
+            set
+            {
+                if (selectedSearchType != value)
+                {
+                    selectedSearchType = value;
+                    OnSelectedSearchTypeChanged.InvokeAsync(value);
+                }
+            }
+        }
+
+        #endregion
+
+        #region Variables
+
+        private I18nText.MyText MyText = new();
+
+        private List<DropDownItem> SearchTypes { get; set; } = new();
+
+        private string selectedSearchType;
+
+        private string searchText;
+
+        #endregion
+
+        #region LifeCycleMethods
+
+        protected override async Task OnParametersSetAsync()
+        {
+            await LoadLocalizedText();
+            InitializeSearchTypes();
+            StateHasChanged(); // Force re-render to reflect the updated language
+        }
+
+        #endregion
+
+        #region Methods
+
+        private async Task LoadLocalizedText() => MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+
+        private void InitializeSearchTypes()
+        {
+            SearchTypes = new List<DropDownItem>
+            {
+                new DropDownItem { Text = MyText.contains, Value = Strings.Contains },
+                new DropDownItem { Text = MyText.notContains, Value = Strings.NotContains },
+                new DropDownItem { Text = MyText.equal, Value = Strings.Equal },
+                new DropDownItem { Text = MyText.notEqual, Value = Strings.NotEqual },
+                new DropDownItem { Text = MyText.startsWith, Value = Strings.StartsWith },
+                new DropDownItem { Text = MyText.notStartsWith, Value = Strings.NotStartsWith },
+                new DropDownItem { Text = MyText.endsWith, Value = Strings.EndsWith },
+                new DropDownItem { Text = MyText.notEndsWith, Value = Strings.NotEndsWith },
+            };
+
+            if (string.IsNullOrEmpty(selectedSearchType))
+            {
+                SelectedSearchType = SearchTypes.FirstOrDefault()?.Value ?? string.Empty;
+            }
+
+            if (string.IsNullOrEmpty(selectedColumn))
+            {
+                SelectedColumn = Columns.FirstOrDefault()?.Value ?? string.Empty;
+            }
+        }
+
+        private async Task ClearTextBox()
+        {
+            searchText = string.Empty;
+            await OnSearchTextChanged.InvokeAsync(string.Empty);
+            await OnSearch.InvokeAsync(null);
+        }
+        #endregion
+    }
+}

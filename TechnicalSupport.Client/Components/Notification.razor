@@ -1,0 +1,33 @@
+﻿@code {
+    private string _currentCulture { get; set; }
+
+    #region Methods
+
+    protected override void OnInitialized()
+    {
+        CultureService.OnCultureChanged += OnCultureChangedHandler;
+        _currentCulture = CultureService.GetCurrentCulture();
+    }
+
+    void OnCultureChangedHandler()
+    {
+        _currentCulture = CultureService.GetCurrentCulture();
+        StateHasChanged();
+    }
+
+    private void Show(NotificationMessage message) => notificationService.Notify(message);
+
+    public void ShowNotifications(string summary, string detail, NotificationSeverity severity = NotificationSeverity.Success, double duration = 4000)
+    {
+        Show(new NotificationMessage
+            {
+                Style = $"position: absolute; top: -110px; {(_currentCulture == Strings.ar ? "left: -10px;" : "right: 10px;")}",
+                Severity = severity,
+                Summary = summary,
+                Detail = detail,
+                Duration = duration
+            });
+    }
+
+    #endregion
+}

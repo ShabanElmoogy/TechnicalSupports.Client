@@ -1,0 +1,24 @@
+﻿@inject IAuthenticationServiceFactory AuthenticationServiceFactory
+
+@code {
+    protected override void OnInitialized()
+    {
+        var currentUri = NavManager.Uri;
+        var relativePath = NavManager.ToBaseRelativePath(currentUri);
+
+        // If the current page is already the login page or empty, just navigate to login.
+        if (string.IsNullOrWhiteSpace(relativePath) ||
+            relativePath.StartsWith(InternalRoutes.Login, StringComparison.OrdinalIgnoreCase))
+        {
+            NavManager.NavigateTo(InternalRoutes.Login);
+            return;
+        }
+
+        var returnUrl = "/" + relativePath;
+        var encodedReturnUrl = Uri.EscapeDataString(returnUrl);
+
+        NavManager.NavigateTo($"{InternalRoutes.Login}?{InternalRoutes.ReturnUrl}={encodedReturnUrl}");
+    }
+}
+
+

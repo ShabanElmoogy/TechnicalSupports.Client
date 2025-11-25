@@ -1,0 +1,181 @@
+﻿@implements IAsyncDisposable
+
+<RadzenCard>
+
+    <RadzenTemplateForm TItem="ServersAddressViewModel" Data=@_server Submit="@SaveServer">
+
+        <DataAnnotationsValidator />
+
+        <RadzenFormField Text="@MyText.address" Style="width: 100%">
+            <RadzenTextBox Name="@nameof(ServersAddressViewModel.Address)"
+            MaxLength="50"
+            AutoCompleteType="AutoCompleteType.Off"
+            @bind-Value="@_server.Address"
+            @ref="_txtFocus" />
+        </RadzenFormField>
+        <RadzenRequiredValidator Component="@nameof(ServersAddressViewModel.Address)" Text="@MyText.requiredField" />
+
+        <RadzenRow JustifyContent="JustifyContent.End" Style="margin-top: 10px;">
+
+            <RadzenButton ButtonType="ButtonType.Submit"
+            Size="ButtonSize.Small"
+            IsBusy="@_isBusy"
+            BusyText="@MyText.submitting"
+            Text="@MyText.save">
+            </RadzenButton>
+
+            <RadzenButton ButtonType="ButtonType.Button"
+            Size="ButtonSize.Small"
+            Click="CloseDialog">
+                @MyText.close
+            </RadzenButton>
+
+        </RadzenRow>
+
+    </RadzenTemplateForm>
+
+</RadzenCard>
+
+@code {
+
+    #region "Injects"
+
+    [Inject]
+    private IMainService<ServersAddressViewModel>? _ServerService { get; set; }
+
+    #endregion
+
+    #region "Parameters"
+
+    [Parameter]
+    public int? Id { get; set; }
+
+    [Parameter]
+    public ServersAddressViewModel? EditedServerAddress { get; set; }
+
+    [Parameter]
+    public EventCallback<List<string>> OnError { get; set; }
+
+    [Parameter]
+    public EventCallback OnSuccess { get; set; }
+
+    #endregion
+
+    #region "Variables"
+
+    private I18nText.MyText MyText = new();
+
+    private ServersAddressViewModel _server { get; set; } = new();
+
+    private ServersAddressViewModel _originalServer = new();
+
+    private RadzenTextBox _txtFocus;
+
+    private bool _isBusy;
+
+    private HubConnection? _hubConnection { get; set; }
+
+    #endregion
+
+    #region "Lifecycle Methods"
+
+    protected async override Task OnInitializedAsync()
+    {
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+        IntializeEditedServer();
+        await ConnectToCompanyHub();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await _txtFocus.FocusAsync();
+    }
+
+    #endregion
+
+    #region "Crud Methods"
+
+    private async Task ConnectToCompanyHub()
+    {
+        var apiAddress = Configuration.GetValue<string>(Strings.MainApiAddress);
+        _hubConnection = new HubConnectionBuilder()
+           .WithUrl($"{apiAddress}{SignalRRoutes.CompanyHub}")
+           .Build();
+
+        await _hubConnection.StartAsync();
+    }
+
+    private void IntializeEditedServer()
+    {
+        if (EditedServerAddress?.Id > 0)
+        {
+            _server = EditedServerAddress;
+            _originalServer = EditedServerAddress.DeepClone();
+        }
+        else
+        {
+            _server = new ServersAddressViewModel();
+        }
+    }
+
+    private async Task SaveServer()
+    {
+        _isBusy = true;
+
+        if (_server.Id > 0)
+        {
+            var response = await _ServerService!.UpdateRow(_server, $"{ApiRoutes.v1}/{ApiRoutes.ServersAddress.UpdateServerAddress}");
+            if (response.Success)
+            {
+                await OnSuccess.InvokeAsync();
+                //await _hubConnection.InvokeAsync(nameof(SignalRMethods.sendserveraddressupdatenotification), _server.Address);
+                dialogService.Close(true);
+            }
+            else
+            {
+                await OnError.InvokeAsync(response.ErrorResponse.Errors.Values.SelectMany(list => list).ToList());
+            }
+        }
+        else
+        {
+            var response = await _ServerService!.AddNewRow(_server, $"{ApiRoutes.v1}/{ApiRoutes.ServersAddress.AddServerAddress}");
+            if (response.Success)
+            {
+                await OnSuccess.InvokeAsync();
+                //await _hubConnection.InvokeAsync(nameof(SignalRMethods.sendserveraddressupdatenotification), _server.Address);
+                dialogService.Close(true);
+            }
+            else
+            {
+                await OnError.InvokeAsync(response.ErrorResponse.Errors.Values.SelectMany(list => list).ToList());
+            }
+        }
+        _isBusy = false;
+    }
+
+    #endregion
+
+    #region "Helper Methods"
+
+    private void CloseDialog()
+    {
+        if (_isBusy)
+            return;
+
+        _originalServer.DeepCloneTo(_server);
+
+        dialogService.Close(false);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection != null)
+        {
+            await _hubConnection.StopAsync();
+            await _hubConnection.DisposeAsync();
+        }
+    }
+
+    #endregion
+}

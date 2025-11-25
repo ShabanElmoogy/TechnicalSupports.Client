@@ -1,0 +1,25 @@
+﻿<RadzenPanelMenuItem Style="font-weight:bold;font-size:14px" 
+                     Text="@ItemText"
+                     Icon="@ItemIcon"
+                     IconColor="#ff6d41" 
+                     Path="@ItemPath"
+                     Click="() => SidebarExpanded.InvokeAsync()" />
+
+@code {
+
+    #region Parameters
+
+    [Parameter]
+    public string ItemText { get; set; }
+
+    [Parameter]
+    public string ItemIcon { get; set; }
+
+    [Parameter]
+    public string ItemPath { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> SidebarExpanded { get; set; }
+
+    #endregion
+}

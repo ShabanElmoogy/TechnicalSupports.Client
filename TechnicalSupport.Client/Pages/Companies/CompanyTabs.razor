@@ -1,0 +1,98 @@
+﻿@page "/companyTabs/{id:int}/{companyname}"
+
+@inherits StateComponentBase
+
+<RadzenCard Style="margin-bottom:10px">
+    <RadzenRow JustifyContent="JustifyContent.SpaceBetween">
+        <RadzenText TextStyle="TextStyle.DisplayH5">@CompanyName</RadzenText>
+        <RadzenIcon Icon="@GoogleIcons.Home"
+        Style="font-size:30px;cursor:pointer"
+        MouseEnter="@(args => ShowTooltip(args, new TooltipOptions() { Position = TooltipPosition.Top }))"
+        class="@GoogleIcons.HomeIcon"
+        @onclick="@(() => NavManager.NavigateTo(InternalRoutes.Companies))"></RadzenIcon>
+    </RadzenRow>
+</RadzenCard>
+
+<RadzenTabs>
+    <Tabs>
+        <RadzenTabsItem Text="Anydesk" Icon="@GoogleIcons.GoogleTvRemote" IconColor="@Colors.WarningDarker">
+
+            <CompanyUsers CompanyId="Id">
+
+            </CompanyUsers>
+        </RadzenTabsItem>
+
+        <RadzenTabsItem Text="Company Notes">
+            Company Notes
+        </RadzenTabsItem>
+
+        <RadzenTabsItem Text="Tasks">
+            Tasks
+        </RadzenTabsItem>
+    </Tabs>
+</RadzenTabs>
+
+<style>
+    .home-icon {
+    transition: transform 0.5s ease, color 0.5s ease;
+    }
+
+    .home-icon:hover {
+    transform: scale(1.1);
+    color: indianred;
+    }
+</style>
+
+@code {
+
+    #region "Injects"
+
+    [Inject]
+    private IMainService<CompanyViewModel>? _companyService { get; set; }
+
+    #endregion
+
+    #region "Variables"
+
+    [Parameter]
+    public int Id { get; set; }
+
+    [Parameter]
+    public string CompanyName { get; set; } = null!;
+
+    #endregion
+
+    #region "Life Cycle Methods"
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Find the company by ID in the SharedCompanies list
+        var company = StateContainer.SharedCompanies.FirstOrDefault(c => c.Id == Id);
+        if (company == null)
+        {
+            // Company not found
+            var result = await _companyService!.GetAll($"{ApiRoutes.v1}/{ApiRoutes.Companies.GetAllCompanies}");
+            StateContainer.SharedCompanies = result;
+        }
+    }
+
+    // protected override async Task OnAfterRenderAsync(bool firstRender)
+    // {
+    //     if (firstRender)
+    //     {
+    //         // Find the company by ID in the SharedCompanies list
+    //         var company = StateContainer.SharedCompanies.FirstOrDefault(c => c.Id == Id);
+    //         if (company == null)
+    //         {
+    //             // Company not found
+    //             var result = await _companyService!.GetAll($"{ApiRoutes.v1}/{ApiRoutes.Companies.GetAllCompanies}");
+    //             StateContainer.SharedCompanies = result;
+    //         }
+    //     }
+    // }
+
+    #endregion
+
+    void ShowTooltip(ElementReference elementReference, TooltipOptions options = null)
+        => tooltipService.Open(elementReference, Strings.Home, options);
+}

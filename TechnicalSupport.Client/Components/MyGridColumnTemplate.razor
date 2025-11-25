@@ -1,0 +1,73 @@
+﻿@typeparam TItem
+
+<RadzenDataGridColumn TItem="TItem"
+                      Property="@ColumnName"
+                      Title="@TextName"
+                      Frozen="@Frozen"
+                      Width="@Width"
+                      Visible="@Visible"
+                      UniqueID="@UniqueID"
+                      FormatString="@FormatString"
+                      OrderIndex="OrderIndex"
+                      TextAlign="TextAlign.Center">
+    <HeaderTemplate>
+        <div class="grid-title">
+            @TextName
+        </div>
+    </HeaderTemplate>
+
+    <Template Context="item">
+        @if (TemplateContent != null)
+        {
+            @TemplateContent(item) 
+        }
+    </Template>
+
+</RadzenDataGridColumn>
+
+@code {
+
+    #region Variables
+
+    private I18nText.MyText MyText = new();
+
+    #endregion
+
+    #region LifeCycleMethods
+
+    protected async override Task OnInitializedAsync() => MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+
+    #endregion
+
+    #region Parameters
+
+    [Parameter]
+    public bool Frozen { get; set; }
+
+    [Parameter]
+    public string? UniqueID { get; set; }
+
+    [Parameter]
+    public string? ColumnName { get; set; }
+
+    [Parameter]
+    public string? TextName { get; set; }
+
+    [Parameter]
+    public string? Width { get; set; }
+
+    [Parameter]
+    public bool Visible { get; set; } = true;
+
+    [Parameter]
+    public string? FormatString { get; set; }
+
+    [Parameter]
+    public int OrderIndex { get; set; }
+
+    [Parameter]
+    public RenderFragment<TItem>? TemplateContent { get; set; }
+
+    #endregion
+}
+

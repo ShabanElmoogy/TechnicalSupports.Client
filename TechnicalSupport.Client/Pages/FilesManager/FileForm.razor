@@ -1,0 +1,124 @@
+﻿@page "/file-upload"
+
+@if (_customLoader)
+{
+    <MyLoader2 LoaderText="@_loaderText" />
+}
+
+<RadzenCard>
+
+    <InputFile OnChange="OnInputFileChange" multiple />
+
+    <RadzenRow JustifyContent="JustifyContent.End"
+               Style="margin-top: 10px;padding-inline:10px">
+
+        <RadzenButton ButtonType="ButtonType.Submit"
+                      Click="SaveFile"
+                      Size="ButtonSize.Small"
+                      IsBusy="@_isBusy"
+                      BusyText="@MyText.submitting"
+                      Text="@MyText.save">
+        </RadzenButton>
+
+        <RadzenButton ButtonType="ButtonType.Button"
+                      Size="ButtonSize.Small"
+                      Click="CloseDialog">
+            @MyText.close
+        </RadzenButton>
+
+    </RadzenRow>
+
+</RadzenCard>
+
+
+@code {
+
+    #region Injects
+
+    [Inject]
+    private IMainService<MediaTypeHeaderValue> _fileService { get; set; }
+
+    #endregion
+
+    #region Parameters
+
+    [Parameter]
+    public EventCallback<string> OnSuccess { get; set; }
+
+    [Parameter]
+    public EventCallback<List<string>> OnError { get; set; }
+
+    #endregion
+
+    #region Varibales
+
+    private bool _isBusy;
+
+    private bool _customLoader;
+
+    private InputFileChangeEventArgs _inputFileChangeEventArgs;
+
+    private I18nText.MyText MyText = new();
+
+    private string _loaderText = string.Empty;
+
+    #endregion
+
+    #region LifeCycle
+
+    protected override async Task OnInitializedAsync()
+    {
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+    }
+
+    #endregion
+
+    #region Methods
+
+    private async Task SaveFile()
+    {
+        var uploadUrl = $"{ApiRoutes.v1}/{ApiRoutes.UploadFiles.UploadFile}";
+        _customLoader = true;
+        _loaderText = MyText.uploading;
+
+        try
+        {
+            var response = await fileService.UploadFileAsync(_inputFileChangeEventArgs, uploadUrl);
+
+            var fileName = _inputFileChangeEventArgs.File.Name;
+
+            if (response.Success)
+            {
+                await OnSuccess.InvokeAsync(fileName);
+                dialogService.Close(true);
+                _customLoader = false;
+            }
+            else
+            {
+                await OnError.InvokeAsync(response.ErrorResponse.Errors.Values.SelectMany(list => list).ToList());
+                dialogService.Close(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            await OnError.InvokeAsync(new List<string> { {ex.Message} });
+            dialogService.Close(true);
+        }
+    }
+
+    #endregion
+
+    #region Events
+
+    private void OnInputFileChange(InputFileChangeEventArgs e)
+    {
+        _inputFileChangeEventArgs = e;
+    }
+
+    private void CloseDialog()
+    {
+        dialogService.Close(false);
+    }
+
+    #endregion
+}

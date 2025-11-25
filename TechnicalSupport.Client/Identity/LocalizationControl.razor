@@ -1,0 +1,232 @@
+﻿@page "/localization-grid"
+
+@if (isLoading)
+{
+    <MyLoader />
+}
+else
+{
+    <RadzenDataGrid TItem="LocalizationEntry"
+                    Data="@_localizationData"
+                    @ref="grid"
+                    AllowPaging="true"
+                    PageSizeOptions="pageSizeOptions"
+                    AllowSorting="true"
+                    AllowFiltering="true"
+                    EditMode="@editMode"
+                    PageSize="5"
+                    RowUpdate="@OnUpdateRow"
+                    RowCreate="@OnCreateRow"
+                    Sort="@Reset"
+                    Page="@Reset"
+                    Filter="@Reset"
+                    ColumnWidth="200px">
+
+        <Columns>
+            <RadzenDataGridColumn TItem="LocalizationEntry" Property="Key" Title="@MyText.key" />
+
+            <RadzenDataGridColumn TItem="LocalizationEntry" Property="Value" Title="@MyText.value">
+                <EditTemplate Context="data">
+                    <RadzenTextBox @bind-Value="data.Value" Style="width: 100%;" />
+                </EditTemplate>
+            </RadzenDataGridColumn>
+
+            <RadzenDataGridColumn TItem="LocalizationEntry">
+
+                <Template Context="data">
+                    <RadzenButton Icon="edit"
+                                  ButtonStyle="ButtonStyle.Light"
+                                  Variant="Variant.Flat"
+                                  Size="ButtonSize.Medium"
+                                  Click="@(args => EditRow(data))" @onclick:stopPropagation="true">
+                    </RadzenButton>
+                </Template>
+
+                <EditTemplate Context="data">
+                    <RadzenButton Icon="check"
+                                  ButtonStyle="ButtonStyle.Success"
+                                  Variant="Variant.Flat"
+                                  Size="ButtonSize.Medium"
+                                  Click="@((args) => SaveRow(data))" aria-label="Save">
+                    </RadzenButton>
+                    <RadzenButton Icon="close"
+                                  ButtonStyle="ButtonStyle.Light"
+                                  Variant="Variant.Flat"
+                                  Size="ButtonSize.Medium"
+                                  class="rz-my-1 rz-ms-1"
+                                  Click="@((args) => CancelEdit(data))" aria-label="Cancel">
+                    </RadzenButton>
+                </EditTemplate>
+            </RadzenDataGridColumn>
+        </Columns>
+    </RadzenDataGrid>
+}
+
+@code {
+    #region "Dependencies"
+    [Inject] private ILocalizationService LocalizationService { get; set; } = default!;
+    [Inject] private NotificationService NotificationService { get; set; } = default!;
+    #endregion
+
+    #region "Variables"
+    private RadzenDataGrid<LocalizationEntry>? grid;
+    private List<LocalizationEntry> _localizationData = new();
+    private bool isLoading = true;
+    private I18nText.MyText MyText = new();
+    private DataGridEditMode editMode = DataGridEditMode.Single;
+    private List<LocalizationEntry> ordersToInsert = new();
+    private List<LocalizationEntry> ordersToUpdate = new();
+    IEnumerable<int> pageSizeOptions = new int[] { 10, 20, 30 };
+    private string currentCulture;
+    #endregion
+
+    #region "Lifecycle Methods"
+    private async Task InitializeComponentData()
+    {
+        isLoading = true;
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+        currentCulture = CultureService.GetCurrentCulture();
+
+        StateHasChanged();
+
+        await LoadLocalizationData();
+
+        StateHasChanged();
+
+        isLoading = false;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        CultureService.OnCultureChanged += OnCultureChangedHandler;
+        await InitializeComponentData();
+    }
+
+    async void OnCultureChangedHandler()
+    {
+        currentCulture = CultureService.GetCurrentCulture();
+        await InitializeComponentData();
+        StateHasChanged();
+    }
+
+    #endregion
+
+    #region "Data Loading"
+    private async Task LoadLocalizationData()
+    {
+        try
+        {
+            var cultureCode = currentCulture.ToLower() == "ar" ? "ar-EG" : "en-US";  // Default to current culture, fall back to 'ar' for Arabic
+            var result = await LocalizationService.GetLocalizationData("v1/api/Localization/GetLocalization", cultureCode);
+            _localizationData = result?.Select(entry => new LocalizationEntry
+                {
+                    Key = entry.Key,
+                    Value = entry.Value
+                }).ToList() ?? new List<LocalizationEntry>();
+        }
+        catch (Exception ex)
+        {
+            ShowNotification("Error", $"An error occurred while loading data: {ex.Message}", NotificationSeverity.Error);
+        }
+    }
+    #endregion
+
+    #region "Save and Cancel Methods"
+
+    private async Task SaveRow(LocalizationEntry data)
+    {
+        try
+        {
+            if (!data.IsValid())
+            {
+                ShowNotification("Error", "Key and Value must not be empty.", NotificationSeverity.Error);
+                return;
+            }
+
+            // Uncomment and implement the update method if required
+
+            var cultureCode = currentCulture.ToLower() == "ar" ? "ar-EG" : "en-US";
+            await LocalizationService.UpdateLocalizationKey(cultureCode, data.Key, data.Value);
+
+            ShowNotification("Success", "Row saved successfully.", NotificationSeverity.Success);
+            CancelEdit(data);
+        }
+        catch (Exception ex)
+        {
+            ShowNotification("Error", $"An error occurred while saving: {ex.Message}", NotificationSeverity.Error);
+        }
+    }
+
+    private void CancelEdit(LocalizationEntry item)
+    {
+        grid?.CancelEditRow(item);
+    }
+
+    private async Task InsertRow()
+    {
+        if (editMode == DataGridEditMode.Single)
+        {
+            ordersToInsert.Clear();
+        }
+
+        var newItem = new LocalizationEntry();
+        ordersToInsert.Add(newItem);
+        await grid.InsertRow(newItem);
+    }
+
+    private void OnUpdateRow(LocalizationEntry localizationEntry)
+    {
+        Reset(localizationEntry);
+    }
+
+    private void OnCreateRow(LocalizationEntry localizationEntry)
+    {
+        // Implement create logic if needed
+    }
+
+    async Task EditRow(LocalizationEntry localizationEntry)
+    {
+        if (editMode == DataGridEditMode.Single)
+        {
+            Reset();
+        }
+
+        ordersToUpdate.Add(localizationEntry);
+        await grid.EditRow(localizationEntry);
+    }
+    #endregion
+
+    #region "Notification Methods"
+    private void ShowNotification(string summary, string detail, NotificationSeverity severity)
+    {
+        NotificationService.Notify(new NotificationMessage
+            {
+                Severity = severity,
+                Summary = summary,
+                Detail = detail,
+                Duration = 4000
+            });
+    }
+    #endregion
+
+    #region "Helper Methods"
+    private void Reset()
+    {
+        ordersToUpdate.Clear();
+    }
+
+    private void Reset(LocalizationEntry item)
+    {
+        ordersToUpdate.Remove(item);
+    }
+    #endregion
+
+    public class LocalizationEntry
+    {
+        public string Key { get; set; } = string.Empty;
+        public string Value { get; set; } = string.Empty;
+
+        // Add IsValid method to check if the entry is valid
+        public bool IsValid() => !string.IsNullOrWhiteSpace(Key) && !string.IsNullOrWhiteSpace(Value);
+    }
+}

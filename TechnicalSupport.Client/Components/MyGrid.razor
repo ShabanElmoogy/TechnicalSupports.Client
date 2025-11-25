@@ -1,0 +1,227 @@
+﻿@typeparam TItem
+@inherits RadzenDataGrid<TItem>
+
+<Animate Animation="Animations.FlipRight"
+         Easing="Easings.EaseInBack"
+         Duration="TimeSpan.FromSeconds(0.5)"
+         Delay="TimeSpan.FromSeconds(1)">
+
+    <RadzenDataGrid AllowFiltering="true"
+                    AllowVirtualization="true"
+                    AllowColumnResize="true"
+                    AllowAlternatingRows="false"
+                    AllowColumnReorder="true"
+                    FilterMode="FilterMode.Advanced"
+                    AllowSorting="true"
+                    Data="@GridSource"
+                    TItem="TItem"
+                    ColumnWidth="300px"
+                    LogicalFilterOperator="LogicalFilterOperator.Or"
+                    RowDoubleClick="RowEvent"
+                    AndOperatorText="@MyText.andOperatorText"
+                    EqualsText="@MyText.equalsText"
+                    NotEqualsText="@MyText.notEqualsText"
+                    ContainsText="@MyText.containsText"
+                    StartsWithText="@MyText.startsWithText"
+                    EndsWithText="@MyText.endsWithText"
+                    DoesNotContainText="@MyText.doesNotContainText"
+                    IsNullText="@MyText.isNullText"
+                    IsNotNullText="@MyText.isNotNullText"
+                    IsEmptyText="@MyText.isEmptyText"
+                    IsNotEmptyText="@MyText.isNotEmptyText"
+                    OrOperatorText="@MyText.orOperatorText"
+                    LessThanText="@MyText.lessThanText"
+                    LessThanOrEqualsText="@MyText.lessThanOrEqualsText"
+                    GreaterThanText="@MyText.greaterThanText"
+                    GreaterThanOrEqualsText="@MyText.greaterThanOrEqualsText"
+                    FilterText="@MyText.filterText"
+                    ClearFilterText="@MyText.clearFilterText"
+                    ApplyFilterText="@MyText.applyFilterText"
+                    PageSize="5"
+                    AllowPaging="true"
+                    PageSizeOptions="@_pageSizeOptions"
+                    PageSizeText="@MyText.pageSizeText"
+                    PagerHorizontalAlign="Radzen.HorizontalAlign.Center"
+                    ShowPagingSummary="true"
+                    PagingSummaryFormat="@MyText.pagingSummaryFormat"
+                    AllColumnsText="@MyText.allColumnsText"
+                    ColumnsShowingText="@MyText.columnsShowingText"
+                    AllowColumnPicking="true"
+                    Culture="@(new CultureInfo(CurrentCulture))"
+                    @bind-Value="@SelectedItems"
+                    @bind-Settings="@Settings"
+                    @ref="_internalDataGrid"
+                    id="grid"
+                    class="rz-border-radius-2 rz-shadow-4">
+
+        <Columns>
+            @GridColumns
+
+            <RadzenDataGridColumn OrderIndex="1000"
+                                  Title="@MyText.actions"
+                                  UniqueID="actions"
+                                  Filterable="false"
+                                  Sortable="false"
+                                  MinWidth="80px"
+                                  Visible="ShowActionButtons"
+                                  TextAlign="Radzen.TextAlign.Center">
+                <HeaderTemplate>
+                    <div class="grid-title">
+                        @MyText.actions
+                    </div>
+                </HeaderTemplate>
+
+                <Template Context="item">
+
+                    <RadzenButton Icon="@GoogleIcons.Edit"
+                                  IconColor="@Radzen.Colors.Primary"
+                                  ButtonStyle="ButtonStyle.Light"
+                                  Variant="Variant.Flat"
+                                  Size="ButtonSize.Medium"
+                                  Visible="ShowEditButton"
+                                  Click="@(async () => await OnEditItem.InvokeAsync(item))"
+                                  @onclick:stopPropagation="true" />
+
+                    @if (DeletePermission)
+                    {
+                        <RadzenButton Icon="@GoogleIcons.Delete"
+                                      IconColor="@Radzen.Colors.Danger"
+                                      ButtonStyle="ButtonStyle.Light"
+                                      Variant="Variant.Flat"
+                                      Size="ButtonSize.Medium"
+                                      Click="@(async () => await OnDeleteItem.InvokeAsync(item))"
+                                      class="mx-2"
+                                      @onclick:stopPropagation="true" />
+                    }
+
+
+                    @if (ActionButtons != null)
+                    {
+                        @ActionButtons(item)
+                    }
+                </Template>
+            </RadzenDataGridColumn>
+        </Columns>
+    </RadzenDataGrid>
+</Animate>
+
+@code {
+
+    #region Parameters
+
+    [CascadingParameter(Name = Strings.CurrentCulture)]
+    public string CurrentCulture { get; set; }
+
+    [Parameter]
+    public string? GridSettingsName { get; set; }
+
+    [Parameter]
+    public bool ShowActionButtons { get; set; } = true;
+
+    [Parameter]
+    public bool ShowEditButton { get; set; } = true;
+
+    [Parameter]
+    public bool DeletePermission { get; set; }
+
+    [Parameter]
+    public EventCallback<DataGridSettings> OnSettingsChanged { get; set; }
+
+    [Parameter]
+    public List<TItem>? GridSource { get; set; }
+
+    [Parameter]
+    public EventCallback<DataGridRowMouseEventArgs<TItem>> RowEvent { get; set; }
+
+    [Parameter]
+    public IList<TItem>? SelectedItems { get; set; }
+
+    [Parameter]
+    public RadzenDataGrid<TItem>? DataGrid { get; set; }
+
+    [Parameter]
+    public EventCallback<TItem> OnEditItem { get; set; }
+
+    [Parameter]
+    public EventCallback<TItem> OnDeleteItem { get; set; }
+
+    [Parameter]
+    public RenderFragment? GridColumns { get; set; }
+
+    [Parameter]
+    public RenderFragment<TItem>? ActionButtons { get; set; }
+
+    [Parameter]
+    public EventCallback<RadzenDataGrid<TItem>> OnGridInitialized { get; set; }
+
+    #endregion
+
+    #region Variables
+
+    private DataGridSettings? _internalDataSettings { get; set; }
+
+    private IEnumerable<int> _pageSizeOptions = new int[] { 5, 10, 20, 30 };
+
+    private I18nText.MyText MyText = new();
+
+    private RadzenDataGrid<TItem>? _internalDataGrid;
+
+    #endregion
+
+    #region LifeCycleMethods
+
+    protected async override Task OnInitializedAsync()
+    {
+        MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _internalDataGrid != null)
+        {
+            await OnGridInitialized.InvokeAsync(_internalDataGrid);
+            await OnSettingsChanged.InvokeAsync(Settings);
+            await LoadStateAsync();
+            StateHasChanged();
+        }
+    }
+
+    #endregion
+
+    #region Methods
+
+    DataGridSettings? _settings;
+
+    public DataGridSettings? Settings
+    {
+        get
+        {
+            return _settings;
+        }
+        set
+        {
+            if (_settings != value)
+            {
+                _settings = value;
+                InvokeAsync(SaveStateAsync);
+            }
+        }
+    }
+
+    private async Task LoadStateAsync()
+    {
+        var result = await jsRuntime.InvokeAsync<string>("window.localStorage.getItem", GridSettingsName);
+
+        if (!string.IsNullOrEmpty(result))
+            _settings = System.Text.Json.JsonSerializer.Deserialize<DataGridSettings>(result);
+    }
+
+    private async Task SaveStateAsync()
+    {
+        await jsRuntime.InvokeVoidAsync("window.localStorage.setItem",
+                                        GridSettingsName,
+                                        System.Text.Json.JsonSerializer.Serialize<DataGridSettings>(Settings));
+    }
+
+    #endregion
+}
