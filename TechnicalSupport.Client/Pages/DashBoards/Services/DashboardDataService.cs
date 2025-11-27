@@ -1,5 +1,4 @@
-﻿using TechnicalSupport.Client.Core.Services.StructService;
-using TechnicalSupport.Client.ViewModels.Dashboard;
+﻿using TechnicalSupport.Client.ViewModels.Dashboard;
 
 namespace TechnicalSupport.Client.Core.Services.Dashboard
 {

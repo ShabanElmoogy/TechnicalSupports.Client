@@ -47,6 +47,9 @@
     [Inject]
     public UserInfoService _userInfo { get; set; }
 
+    [Inject]
+    private PhotoService _photoService { get; set; }
+
     #endregion
 
     #region Variables
@@ -98,9 +101,9 @@
         }
     }
 
-    private async void UpdateInfo()
+    private async void UpdateInfo(UserProfileViewModel user)
     {
-        await _accountService.UpdateUserInfo(User);
+        await _accountService.UpdateUserInfo(user);
     }
 
     #endregion

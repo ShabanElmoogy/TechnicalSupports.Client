@@ -1,6 +1,7 @@
 ﻿@page "/oraganize-tasks"
 
 @inject DialogService DialogService
+@inject UserInfoService _userInfoService
 
 <RadzenScheduler @ref=@scheduler
                  style="height: 750px;"
@@ -50,7 +51,7 @@
     {
         try
         {
-            var response = await _appointmentService.GetAll($"{ApiRoutes.v1}/{ApiRoutes.Appointments.GetAllAppointments}/{_userId}");
+            var response = await _appointmentService.GetAll($"{ApiRoutes.v1}/{ApiRoutes.Appointments.GetAllAppointments}");
 
             if (response is not null)
             {
@@ -102,61 +103,54 @@
 
     private async Task OnAppointmentSelect(SchedulerAppointmentSelectEventArgs<AppointmentViewModel> args)
     {
-        // Make a copy of the selected appointment, ensuring it's independent from the dialog's data
-        var copy = new AppointmentViewModel
+        // Create a copy to pass to the dialog
+        var dialogData = new AppointmentViewModel
             {
+                Id = args.Data.Id,
                 Start = args.Data.Start,
                 End = args.Data.End,
                 Text = args.Data.Text
             };
 
-        // Create a separate copy of 'copy' to pass to the dialog so 'copy' remains unaffected
-        var dialogData = new AppointmentViewModel
-            {
-                Start = copy.Start,
-                End = copy.End,
-                Text = copy.Text
-            };
-
-        // Open the EditAppointment dialog, passing the separate 'dialogData' object (it will be modified by the dialog)
+        // Open the EditAppointment dialog
         var data = await DialogService.OpenAsync<EditAppointmentPage>("Edit AppointmentViewModel", new Dictionary<string, object> { { "AppointmentViewModel", dialogData } });
 
-        // If 'data' contains the modified appointment
+        // If data contains the modified appointment
         if (data != null)
         {
-            // 'copy' remains unchanged, and 'data' contains the modified version
-            List<AppointmentViewModel> combinedList = new List<AppointmentViewModel> { copy, data };
-
-            // Proceed with updating the appointment using 'copy' and 'data'
-            var response = await _appointmentService.UpdateListRow(combinedList, $"{ApiRoutes.v1}/{ApiRoutes.Appointments.EditAppointment}");
-            if (response.Success)
+            if (args.Data.Id > 0)
             {
-                appointments.Remove(copy);
-
-                // Update the local appointments list after the successful API call
-                int index = -1;
-                for (int i = 0; i < appointments.Count; i++)
+                // Ensure the returned data has the correct ID
+                data.Id = args.Data.Id;
+                
+                // Update existing appointment
+                var response = await _appointmentService.UpdateRow(data, $"{ApiRoutes.v1}/{ApiRoutes.Appointments.EditAppointment}");
+                if (response.Success)
                 {
-                    if (appointments[i].Start == copy.Start && appointments[i].End == copy.End)
+                    // Find and update the appointment in the local list
+                    var existingAppointment = appointments.FirstOrDefault(a => a.Id == args.Data.Id);
+                    if (existingAppointment != null)
                     {
-                        index = i;
-                        break;
+                        existingAppointment.Start = data.Start;
+                        existingAppointment.End = data.End;
+                        existingAppointment.Text = data.Text;
                     }
-                }
 
-                if (index >= 0)
+                    await scheduler.Reload();
+                    DialogService.Close(true);
+                }
+                else
                 {
-                    appointments[index] = data;  // Replace the old appointment with the updated one
+                    NotificationRef.ShowNotifications("error", "Error occurred while updating the appointment.");
                 }
-
-                // Reload the scheduler after the update is successful
-                await scheduler.Reload();
-                await LoadAppointments();
-                DialogService.Close(true);
             }
             else
             {
-                NotificationRef.ShowNotifications("error", "Error occurred while updating the appointment.");
+                // This is a new appointment, save it first
+                await SaveAppointment(data);
+                // Remove the old appointment from local list
+                appointments.Remove(args.Data);
+                DialogService.Close(true);
             }
         }
     }
@@ -177,39 +171,47 @@
 
         if (draggedAppointment != null)
         {
-            // Create a copy of the original appointment to represent the old position
-            var oldAppointment = new AppointmentViewModel
-                {
-                    Start = draggedAppointment.Start,
-                    End = draggedAppointment.End,
-                    Text = draggedAppointment.Text,
-                    // Add any other properties needed for the backend
-                };
+            // Store original times for rollback
+            var originalStart = draggedAppointment.Start;
+            var originalEnd = draggedAppointment.End;
 
-            // Update the dragged appointment to reflect the new position
+            // Update the appointment times
             draggedAppointment.Start += args.TimeSpan;
             draggedAppointment.End += args.TimeSpan;
 
             try
             {
-                // Send the old and new appointment data to the backend
-                var combinedList = new List<AppointmentViewModel> { oldAppointment, draggedAppointment };
-                var response = await _appointmentService.UpdateListRow(combinedList, $"{ApiRoutes.v1}/{ApiRoutes.Appointments.EditAppointment}");
-
-                if (response.Success)
+                if (draggedAppointment.Id > 0)
                 {
-                    // Remove the old appointment from the local list
-                    appointments.Remove(oldAppointment);
+                    // Send the updated appointment to the backend
+                    var response = await _appointmentService.UpdateRow(draggedAppointment, $"{ApiRoutes.v1}/{ApiRoutes.Appointments.EditAppointment}");
 
-                    // Add the updated appointment to the list
-                    appointments.Add(draggedAppointment);
-
-                    // Reload the scheduler to reflect changes
+                    if (response.Success)
+                    {
+                        // Reload the scheduler to reflect changes
+                        await scheduler.Reload();
+                    }
+                    else
+                    {
+                        // Revert the changes if update failed
+                        draggedAppointment.Start = originalStart;
+                        draggedAppointment.End = originalEnd;
+                        await scheduler.Reload();
+                        NotificationRef.ShowNotifications("error", "Failed to update appointment position.");
+                    }
+                }
+                else
+                {
+                    // This is a new appointment, just update locally
                     await scheduler.Reload();
                 }
             }
             catch (Exception ex)
             {
+                // Revert the changes if update failed
+                draggedAppointment.Start = originalStart;
+                draggedAppointment.End = originalEnd;
+                await scheduler.Reload();
                 NotificationRef.ShowNotifications("error", "An error occurred while processing the appointment move.");
             }
         }

@@ -2,7 +2,6 @@ using DocumentFormat.OpenXml.Office2016.Drawing.ChartDrawing;
 using TechnicalSupport.Client.Core.Services.Dashboard;
 using TechnicalSupport.Client.Core.Services.ExportFilesService;
 using TechnicalSupport.Client.Core.Services.LocalStorageService;
-using TechnicalSupport.Client.Core.Services.StructService;
 using TechnicalSupport.Client.Core.StateManagement.StateContainer;
 
 namespace TechnicalSupport.Client;
@@ -75,7 +74,6 @@ public class Program
         builder.Services.AddScoped<IFileService, FileService>();
         builder.Services.AddScoped<IAccountService,AccountService>();
         builder.Services.AddScoped<IExportFilesService, ExportFilesService>();
-        builder.Services.AddScoped<IDashboardService, DashboardService>();
         builder.Services.AddTransient<GlobalFunctions>();
 
         static void RegisterPermissionClaims(AuthorizationOptions options)

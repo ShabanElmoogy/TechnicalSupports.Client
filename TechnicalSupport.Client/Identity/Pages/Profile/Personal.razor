@@ -119,6 +119,9 @@
     </ChildContent>
 </RadzenTemplateForm>
 
+@implements IDisposable
+@inject UserInfoService _userInfoService
+
 @code {
     //TODO: Add Edit Picture
 
@@ -146,6 +149,12 @@
     [Inject]
     private IAccountService _accountService { get; set; }
 
+    [Inject]
+    private IFileService _fileService { get; set; }
+
+    [Inject]
+    private PhotoService _photoService { get; set; }
+
     #endregion
 
     #region Variables
@@ -171,18 +180,45 @@
     protected async override Task OnInitializedAsync()
     {
         MyText = await I18nText.GetTextTableAsync<I18nText.MyText>(this);
+        
+        // Subscribe to photo updates
+        _photoService.OnPhotoUpdated += UpdatePhotoDisplay;
+        
+        // Load photo from database
+        _userId = await _userInfoService.GetUserIdAsync();
+        await _photoService.LoadPhotoFromDatabaseAsync(_userId);
+        
+        // Load current photo from PhotoService
+        var currentPhoto = _photoService.GetCurrentPhoto();
+        if (currentPhoto?.Length > 0)
+        {
+            _imgDataUrl = $"data:image/*;base64,{Convert.ToBase64String(currentPhoto)}";
+        }
     }
 
     protected override void OnParametersSet()
     {
-        // if (User?.ProfilePicture is not null && User.ProfilePicture.Length > 0)
-        // {
-        //     _imgDataUrl = $"data:image/*;base64,{Convert.ToBase64String(User.ProfilePicture)}";
-        // }
-        // else
-        // {
-        //     _imgDataUrl = "/images/user.png";
-        // }
+        // Priority: User.ProfilePicture > PhotoService > UserProfilePhoto > default
+        if (!string.IsNullOrEmpty(User?.ProfilePicture))
+        {
+            _imgDataUrl = $"data:image/*;base64,{User.ProfilePicture}";
+        }
+        else
+        {
+            var currentPhoto = _photoService?.GetCurrentPhoto();
+            if (currentPhoto?.Length > 0)
+            {
+                _imgDataUrl = $"data:image/*;base64,{Convert.ToBase64String(currentPhoto)}";
+            }
+            else if (UserProfilePhoto is not null && UserProfilePhoto.Length > 0)
+            {
+                _imgDataUrl = $"data:image/*;base64,{Convert.ToBase64String(UserProfilePhoto)}";
+            }
+            else
+            {
+                _imgDataUrl = "/images/user.png";
+            }
+        }
     }
 
     
@@ -198,32 +234,70 @@
             if (file != null)
             {
                 _selectedFile = file;
+                
+                // Convert file to byte array and base64 for preview
                 using var stream = new MemoryStream();
-                await _selectedFile.OpenReadStream().CopyToAsync(stream);
-          
-
-                StateHasChanged();
-            
-
-                IsPhotoUpdated = true; // Mark as updated
+                await _selectedFile.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024).CopyToAsync(stream);
+                _userProfilePicture = stream.ToArray();
+                
+                // Update preview image
+                _imgDataUrl = $"data:image/*;base64,{Convert.ToBase64String(_userProfilePicture)}";
+                
+                // Store the profile picture for upload
+                // Note: UserProfileViewModel doesn't have ProfilePicture property
+                
+                IsPhotoUpdated = true;
             }
         }
         else
         {
             // File removed
-            _imgDataUrl = string.Empty;
+            _imgDataUrl = "/images/user.png";
             _selectedFile = null;
+            _userProfilePicture = null;
             IsPhotoUpdated = false;
         }
 
-        this.StateHasChanged(); // Update the UI
+        StateHasChanged();
+    }
+
+    private void UpdatePhotoDisplay(byte[] photoData)
+    {
+        if (photoData?.Length > 0)
+        {
+            _imgDataUrl = $"data:image/*;base64,{Convert.ToBase64String(photoData)}";
+        }
+        else
+        {
+            _imgDataUrl = "/images/user.png";
+        }
+        StateHasChanged();
     }
 
     private async Task UpdateInfo()
     {
+        // Include photo as base64 string if updated
+        if (IsPhotoUpdated && _userProfilePicture != null)
+        {
+            User.ProfilePicture = Convert.ToBase64String(_userProfilePicture);
+        }
+        
+        // Update user profile (including photo)
         await OnUserUpdated.InvokeAsync(User);
+        
+        // Notify PhotoService to refresh photo in other components
+        if (IsPhotoUpdated && _userProfilePicture != null)
+        {
+            await _photoService.UpdatePhotoAsync(User);
+        }
+        
         IsEditMode = false;
         IsPhotoUpdated = false;
+    }
+
+    public void Dispose()
+    {
+        _photoService.OnPhotoUpdated -= UpdatePhotoDisplay;
     }
 
 

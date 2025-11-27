@@ -1,5 +1,8 @@
 ﻿@page "/import-companies"
 
+@inject ILocalStorageService localStorage
+@inject DialogService dialogService
+
 <h2>@MyText.uploadCompaniesData</h2>
 
 <br />
@@ -74,44 +77,81 @@
     private async Task RetrieveFiles(NetcodeHubUploadModel incomingFiles)
     {
         _customLoader = true;
-
         _loaderText = MyText.downloading;
-
-        if (incomingFiles is not null)
-        {
-            foreach (var item in incomingFiles.FileModel!.IBrowserFiles!)
-            {
-                await ReadExcelFile(item);
-            }
-        }
         StateHasChanged();
 
-        _customLoader = false;
+        try
+        {
+            if (incomingFiles?.FileModel?.IBrowserFiles != null)
+            {
+                foreach (var item in incomingFiles.FileModel.IBrowserFiles)
+                {
+                    await ReadExcelFile(item);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationRef.ShowNotifications("Error", $"Failed to read Excel file: {ex.Message}", NotificationSeverity.Error);
+        }
+        finally
+        {
+            _customLoader = false;
+            StateHasChanged();
+        }
     }
 
     private async Task ReadExcelFile(IBrowserFile file)
     {
-        ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
-        _companies = new();
+        const long maxFileSize = 10 * 1024 * 1024; // 10MB limit
+        
+        if (file.Size > maxFileSize)
+        {
+            NotificationRef.ShowNotifications("Error", "File size exceeds 10MB limit", NotificationSeverity.Error);
+            return;
+        }
+
+        ExcelPackage.License.SetNonCommercialPersonal("shabanelmogy");
+        _companies.Clear();
 
         using (var stream = new MemoryStream())
         {
-            await file.OpenReadStream().CopyToAsync(stream);
+            await file.OpenReadStream(maxFileSize).CopyToAsync(stream);
             stream.Position = 0;
 
             using (var package = new ExcelPackage(stream))
             {
-                var workSheet = package.Workbook.Worksheets[0];
-                var rowCount = workSheet.Dimension.Rows;
-                var colCount = workSheet.Dimension.Columns;
+                if (package.Workbook.Worksheets.Count == 0)
+                {
+                    NotificationRef.ShowNotifications("Error", "No worksheets found in Excel file", NotificationSeverity.Error);
+                    return;
+                }
 
-                // Assuming columns are labeled as "Id" and "NameAr"
+                var workSheet = package.Workbook.Worksheets[0];
+                
+                if (workSheet.Dimension == null)
+                {
+                    NotificationRef.ShowNotifications("Error", "Excel worksheet is empty", NotificationSeverity.Error);
+                    return;
+                }
+
+                var rowCount = workSheet.Dimension.Rows;
+
                 for (int row = 2; row <= rowCount; row++)
                 {
-                    var company = new CompanyViewModel();
-                    company.NameAr = workSheet.Cells[row, 1].Text;
-                    company.NameEn = workSheet.Cells[row, 2].Text;
-                    company.ServerAddressId = int.TryParse(workSheet.Cells[row, 3].Text, out int id) ? id : 0;
+                    var nameAr = workSheet.Cells[row, 1].Text?.Trim();
+                    var nameEn = workSheet.Cells[row, 2].Text?.Trim();
+                    
+                    if (string.IsNullOrEmpty(nameAr) && string.IsNullOrEmpty(nameEn))
+                        continue; // Skip empty rows
+
+                    var company = new CompanyViewModel
+                    {
+                        NameAr = nameAr ?? string.Empty,
+                        NameEn = nameEn ?? string.Empty,
+                        ServerAddressId = int.TryParse(workSheet.Cells[row, 3].Text, out int id) ? id : 0
+                    };
+                    
                     _companies.Add(company);
                 }
             }
@@ -132,13 +172,13 @@
             ElapsedTime = "0s"; // Reset time display
 
             // Update the time every second while the upload is in progress
-            _ = Task.Run(() =>
+            var timerTask = Task.Run(async () =>
             {
                 while (_stopwatch.IsRunning)
                 {
-                    ElapsedTime = $"{_stopwatch.Elapsed.Seconds}s";
-                    InvokeAsync(StateHasChanged); // Update UI
-                    Task.Delay(1000).Wait();
+                    ElapsedTime = $"{_stopwatch.Elapsed.TotalSeconds:F0}s";
+                    await InvokeAsync(StateHasChanged);
+                    await Task.Delay(1000);
                 }
             });
 
