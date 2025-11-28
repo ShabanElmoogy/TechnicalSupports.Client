@@ -50,4 +50,11 @@ public class PhotoService
         // Notify all subscribers about the update
         OnPhotoUpdated?.Invoke(_currentPhoto);
     }
+
+    // Method to manually update the current photo and notify subscribers
+    public void UpdateCurrentPhoto(byte[] photoData)
+    {
+        _currentPhoto = photoData;
+        OnPhotoUpdated?.Invoke(_currentPhoto);
+    }
 }

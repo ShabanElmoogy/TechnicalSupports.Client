@@ -1,10 +1,13 @@
 ﻿@page "/import-companyusers"
 
+@inject ILocalStorageService localStorage
+@inject DialogService dialogService
+
 <h2>@MyText.uploadCompanyUsersData</h2>
 
 <br />
 
-<RadzenRow>
+<RadzenRow RowGap="0">
     <RadzenColumn Size="5">
         <NetcodeHubFileUpload @ref="FileUpload"
         Notify="RetrieveFiles"
@@ -66,7 +69,7 @@
 
     private List<CompanyUsersViewModel> _companyUsers = new();
 
-    NetcodeHubFileUpload? FileUpload;
+    NetcodeHubFileUpload FileUpload = new();
 
     private Stopwatch _stopwatch = new();
 
@@ -80,48 +83,89 @@
     private async Task RetrieveFiles(NetcodeHubUploadModel incomingFiles)
     {
         _customLoader = true;
-
         _loaderText = MyText.downloading;
-
-        if (incomingFiles is not null)
-        {
-            foreach (var item in incomingFiles.FileModel!.IBrowserFiles!)
-            {
-                await ReadExcelFile(item);
-            }
-        }
         StateHasChanged();
 
-        _customLoader = false;
+        try
+        {
+            if (incomingFiles?.FileModel?.IBrowserFiles != null)
+            {
+                foreach (var item in incomingFiles.FileModel.IBrowserFiles)
+                {
+                    await ReadExcelFile(item);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationRef.ShowNotifications("Error", $"Failed to read Excel file: {ex.Message}", NotificationSeverity.Error);
+        }
+        finally
+        {
+            _customLoader = false;
+            StateHasChanged();
+        }
     }
 
     private async Task ReadExcelFile(IBrowserFile file)
     {
-        ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
-        _companyUsers = new();
+        const long maxFileSize = 10 * 1024 * 1024; // 10MB limit
+
+        if (file.Size > maxFileSize)
+        {
+            NotificationRef.ShowNotifications("Error", "File size exceeds 10MB limit", NotificationSeverity.Error);
+            return;
+        }
+
+        ExcelPackage.License.SetNonCommercialPersonal("shabanelmogy");
+        _companyUsers.Clear();
 
         using (var stream = new MemoryStream())
         {
-            await file.OpenReadStream().CopyToAsync(stream);
+            await file.OpenReadStream(maxFileSize).CopyToAsync(stream);
             stream.Position = 0;
 
             using (var package = new ExcelPackage(stream))
             {
+                if (package.Workbook.Worksheets.Count == 0)
+                {
+                    NotificationRef.ShowNotifications("Error", "No worksheets found in Excel file", NotificationSeverity.Error);
+                    return;
+                }
+
                 var workSheet = package.Workbook.Worksheets[0];
+
+                if (workSheet.Dimension == null)
+                {
+                    NotificationRef.ShowNotifications("Error", "Excel worksheet is empty", NotificationSeverity.Error);
+                    return;
+                }
+
                 var rowCount = workSheet.Dimension.Rows;
-                var colCount = workSheet.Dimension.Columns;
 
                 for (int row = 2; row <= rowCount; row++)
                 {
-                    var companyUser = new CompanyUsersViewModel();
+                    var name = workSheet.Cells[row, 1].Text?.Trim();
+                    var anydesk = workSheet.Cells[row, 2].Text?.Trim();
+                    var anydeskPass = workSheet.Cells[row, 3].Text?.Trim();
+                    var serverPass = workSheet.Cells[row, 4].Text?.Trim();
+                    var companyIdText = workSheet.Cells[row, 5].Text;
+                    var cloudUser = workSheet.Cells[row, 6].Text?.Trim();
+                    var cloudUserPass = workSheet.Cells[row, 7].Text?.Trim();
 
-                    companyUser.Name = workSheet.Cells[row, 1].Text;
-                    companyUser.AnyDesk = workSheet.Cells[row, 2].Text;
-                    companyUser.AnyDeskPassword = workSheet.Cells[row, 3].Text;
-                    companyUser.ServerPassword = workSheet.Cells[row, 4].Text;
-                    companyUser.CompanyId = int.TryParse(workSheet.Cells[row, 5].Text, out int id) ? id : 0;
-                    companyUser.CloudUser = workSheet.Cells[row, 6].Text;
-                    companyUser.CloudUserPassword = workSheet.Cells[row, 7].Text;
+                    if (string.IsNullOrEmpty(name) && string.IsNullOrEmpty(anydesk) && string.IsNullOrEmpty(anydeskPass) && string.IsNullOrEmpty(serverPass) && string.IsNullOrEmpty(companyIdText) && string.IsNullOrEmpty(cloudUser) && string.IsNullOrEmpty(cloudUserPass))
+                        continue; // Skip completely empty rows
+
+                    var companyUser = new CompanyUsersViewModel
+                    {
+                        Name = name ?? string.Empty,
+                        AnyDesk = anydesk ?? string.Empty,
+                        AnyDeskPassword = anydeskPass ?? string.Empty,
+                        ServerPassword = serverPass ?? string.Empty,
+                        CompanyId = int.TryParse(companyIdText, out int id) ? id : 0,
+                        CloudUser = cloudUser ?? string.Empty,
+                        CloudUserPassword = cloudUserPass ?? string.Empty
+                    };
 
                     _companyUsers.Add(companyUser);
                 }
@@ -133,23 +177,21 @@
     {
         try
         {
-            // Start the stopwatch when upload starts
             _showCounter = true;
             _stopwatch.Restart();
             _stopwatch.Start();
             _customLoader = true;
             _loaderText = MyText.uploading;
 
-            ElapsedTime = "0s"; // Reset time display
+            ElapsedTime = "0s";
 
-            // Update the time every second while the upload is in progress
-            _ = Task.Run(() =>
+            var timerTask = Task.Run(async () =>
             {
                 while (_stopwatch.IsRunning)
                 {
-                    ElapsedTime = $"{_stopwatch.Elapsed.Seconds}s";
-                    InvokeAsync(StateHasChanged); // Update UI
-                    Task.Delay(1000).Wait();
+                    ElapsedTime = $"{_stopwatch.Elapsed.TotalSeconds:F0}s";
+                    await InvokeAsync(StateHasChanged);
+                    await Task.Delay(1000);
                 }
             });
 
@@ -160,7 +202,6 @@
                 NotificationRef.ShowNotifications(MyText.companyUsersUpload, MyText.companyUsersDataUploaded, duration: 5000);
                 _companyUsers.Clear();
                 await localStorage.RemoveItemAsync(StorageKeys.CompaniesUsersGridSettings);
-
             }
             else
             {
@@ -170,7 +211,7 @@
         }
         catch (Exception ex)
         {
-            NotificationRef.ShowNotifications(MyText.serversUpload, ex.Message, NotificationSeverity.Error, 10000);
+            NotificationRef.ShowNotifications(MyText.companyUsersUpload, ex.Message, NotificationSeverity.Error, 10000);
         }
         finally
         {
